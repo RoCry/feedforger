@@ -91,7 +91,8 @@ class Database:
         cutoff = int((datetime.now(UTC) - timedelta(days=days)).timestamp())
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
-                "DELETE FROM feeds WHERE updated_at < ?",
+                # only delete success feeds
+                "DELETE FROM feeds WHERE updated_at < ? AND continue_fail_count = 0",
                 (cutoff,),
             ) as cursor:
                 deleted = cursor.rowcount
