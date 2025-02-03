@@ -5,8 +5,8 @@ on:
     - cron: '45 * * * *' # every hour at 45 min
   workflow_dispatch:  # Allow manual trigger
   push:
-  branches:
-    - deploy
+    branches:
+      - deploy
 
 jobs:
   aggregate-feeds:
