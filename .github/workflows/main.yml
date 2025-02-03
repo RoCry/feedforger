@@ -8,6 +8,10 @@ on:
     branches:
       - deploy
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   forge-feeds:
     runs-on: ubuntu-latest
