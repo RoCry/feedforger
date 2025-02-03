@@ -24,7 +24,7 @@ _recipes = {
     "Rust News": {
         "urls": [
             "https://hnrss.org/frontpage.atom?q=rust",
-            "https://reddit.com/rust.rss",
+            "https://www.reddit.com/r/rust.rss",
         ]
     },
 }
