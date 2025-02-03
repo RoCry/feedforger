@@ -7,7 +7,7 @@ from utils import logger
 
 class FeedFetcher:
     def __init__(
-        self, 
+        self,
         max_concurrent: int = 5,
         timeout: float = 15.0,
     ):
@@ -29,16 +29,29 @@ class FeedFetcher:
         """
         async with self.semaphore:  # Limit concurrent requests
             try:
-                logger.info(f"Fetching feed from '{url}'")
+                logger.debug(f"Fetching feed from '{url}'")
                 response = await self.client.get(url)
                 response.raise_for_status()
                 return url, response.text, None
             except Exception as e:
                 error_msg = f"{type(e).__name__}: {str(e)}"
-                logger.error(f"Failed to fetch {url}: {error_msg}")
+                logger.error(f"Failed to fetch '{url}' {error_msg}")
                 return url, None, error_msg
 
-    async def fetch_urls(self, urls: List[str]) -> List[tuple[str, Optional[str], Optional[str]]]:
+    async def fetch_urls(
+        self, urls: List[str]
+    ) -> List[tuple[str, Optional[str], Optional[str]]]:
         """Fetch multiple URLs concurrently."""
+        total = len(urls)
+        completed = 0
+        results = []
+
+        # Create batches of tasks to show progress
         tasks = [self.fetch_url(url) for url in urls]
-        return await asyncio.gather(*tasks) 
+        for result in asyncio.as_completed(tasks):
+            completed += 1
+            result = await result
+            results.append(result)
+            logger.info(f"Fetched {completed}/{total} feeds")
+
+        return results
