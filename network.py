@@ -39,7 +39,7 @@ class FeedFetcher:
                 return url, None, error_msg
 
     async def fetch_urls(
-        self, urls: List[str]
+        self, feed_name: str, urls: List[str]
     ) -> List[tuple[str, Optional[str], Optional[str]]]:
         """Fetch multiple URLs concurrently."""
         total = len(urls)
@@ -52,6 +52,6 @@ class FeedFetcher:
             completed += 1
             result = await result
             results.append(result)
-            logger.info(f"Fetched {completed}/{total} feeds")
+            logger.info(f"{feed_name} {completed}/{total}")
 
         return results

@@ -115,7 +115,7 @@ async def process_feeds(
     week_ago = datetime.now(UTC) - timedelta(days=7)
 
     total_urls = len(feed_config["urls"])
-    logger.info(f"Processing {total_urls} feeds for {feed_name}")
+    logger.info(f"{feed_name} processing {total_urls} feeds")
 
     # First check cache for all URLs
     urls_to_fetch = []
@@ -123,11 +123,9 @@ async def process_feeds(
     for url in feed_config["urls"]:
         if cached := await db.get_content(url):
             cache_hits += 1
-            logger.info(f"Using cached content ({cache_hits}/{total_urls})")
             try:
                 feed_items = await process_feed_entries(cached, feed_config, week_ago)
                 items.extend(feed_items)
-                logger.info(f"Processed {len(feed_items)} cached entries from {url}")
             except Exception as e:
                 logger.error(
                     f"Error processing cached content from {url}: {e}", exc_info=True
@@ -136,12 +134,12 @@ async def process_feeds(
             urls_to_fetch.append(url)
 
     if not urls_to_fetch:
-        logger.info(f"All {total_urls} feeds were cached")
+        logger.info(f"{feed_name} all {total_urls} feeds were cached")
         return items
 
     # Fetch all uncached feeds concurrently
-    logger.info(f"Fetching {len(urls_to_fetch)} uncached feeds")
-    results = await fetcher.fetch_urls(urls_to_fetch)
+    logger.info(f"{feed_name} fetching {len(urls_to_fetch)} uncached feeds, total {total_urls}")
+    results = await fetcher.fetch_urls(feed_name, urls_to_fetch)
 
     # Process results and update cache sequentially
     processed = 0
@@ -152,18 +150,17 @@ async def process_feeds(
 
         # Process content if successful
         if content:
-            logger.info(
-                f"Processing entries from {url} ({processed}/{len(urls_to_fetch)})"
-            )
             try:
                 feed_items = await process_feed_entries(content, feed_config, week_ago)
                 items.extend(feed_items)
-                logger.info(f"Processed {len(feed_items)} entries from {url}")
+                logger.info(
+                    f"{feed_name} processed {len(feed_items)} entries from {url} ({processed}/{len(urls_to_fetch)})"
+                )
             except Exception as e:
-                logger.error(f"Error processing {url}: {e}", exc_info=True)
+                logger.error(f"{feed_name} error processing {url}: {e}", exc_info=True)
         else:
             logger.warning(
-                f"Skipping {url} due to fetch failure ({processed}/{len(urls_to_fetch)})"
+                f"{feed_name} skipping {url} due to fetch failure ({processed}/{len(urls_to_fetch)})"
             )
 
     return items
@@ -181,7 +178,7 @@ async def main():
     fetcher = FeedFetcher()
     try:
         for feed_name, feed_config in get_recipes().items():
-            logger.info(f"Processing feed: {feed_name}")
+            logger.info(f"{feed_name} processing")
             items = await process_feeds(fetcher, db, feed_name, feed_config)
 
             feed_url = f"https://github.com/RoCry/feedforger/releases/download/latest/{urllib.parse.quote(feed_name)}.json"
@@ -202,7 +199,7 @@ async def main():
 
             output_path = output_dir / f"{feed_name}.json"
             output_path.write_text(feed.model_dump_json(indent=2, exclude_none=True))
-            logger.info(f"Generated feed file: {output_path}, {len(items)} items")
+            logger.info(f"{feed_name} generated feed file: {output_path}, {len(items)} items")
     finally:
         await fetcher.close()
 
