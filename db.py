@@ -21,7 +21,8 @@ class Database:
                     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                     content TEXT,
-                    continue_fail_count INTEGER NOT NULL DEFAULT 0
+                    continue_fail_count INTEGER NOT NULL DEFAULT 0,
+                    error_reason TEXT
                 )
             """)
             await db.execute(
@@ -47,7 +48,13 @@ class Database:
                         return row[0]
         return None
 
-    async def set_content(self, url: str, content: Optional[str], success: bool = True) -> None:
+    async def set_content(
+        self, 
+        url: str, 
+        content: Optional[str], 
+        success: bool = True,
+        error_reason: Optional[str] = None
+    ) -> None:
         """
         Update cache with new content.
         
@@ -55,34 +62,37 @@ class Database:
             url: Feed URL
             content: Feed content, None if fetch failed
             success: Whether the fetch was successful
+            error_reason: Error message if fetch failed
         """
         now = int(datetime.now(UTC).timestamp())
         async with aiosqlite.connect(self.db_path) as db:
             if success:
-                # Reset fail count on success
+                # Reset fail count and error on success
                 await db.execute(
                     """
-                    INSERT INTO feeds (id, content, created_at, updated_at, continue_fail_count) 
-                    VALUES (?, ?, ?, ?, 0)
+                    INSERT INTO feeds (id, content, created_at, updated_at, continue_fail_count, error_reason) 
+                    VALUES (?, ?, ?, ?, 0, NULL)
                     ON CONFLICT(id) DO UPDATE SET 
                         updated_at = excluded.updated_at,
                         content = excluded.content,
-                        continue_fail_count = 0
+                        continue_fail_count = 0,
+                        error_reason = NULL
                     """,
                     (url, content, now, now),
                 )
             else:
-                # Increment fail count on failure
+                # Increment fail count and set error on failure
                 await db.execute(
                     """
-                    INSERT INTO feeds (id, content, created_at, updated_at, continue_fail_count) 
-                    VALUES (?, NULL, ?, ?, 1)
+                    INSERT INTO feeds (id, content, created_at, updated_at, continue_fail_count, error_reason) 
+                    VALUES (?, NULL, ?, ?, 1, ?)
                     ON CONFLICT(id) DO UPDATE SET 
                         updated_at = excluded.updated_at,
                         content = excluded.content,
-                        continue_fail_count = continue_fail_count + 1
+                        continue_fail_count = continue_fail_count + 1,
+                        error_reason = excluded.error_reason
                     """,
-                    (url, now, now),
+                    (url, now, now, error_reason),
                 )
             await db.commit()
 

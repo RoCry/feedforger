@@ -30,9 +30,10 @@ async def fetch_feed(client: httpx.AsyncClient, url: str, db: Database) -> Optio
         await db.set_content(url, content, success=True)
         return content
     except Exception as e:
-        logger.error(f"Failed to fetch {url}: {e}")
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        logger.error(f"Failed to fetch {url}: {error_msg}")
         # Update cache with failure
-        await db.set_content(url, None, success=False)
+        await db.set_content(url, None, success=False, error_reason=error_msg)
         return None
 
 
