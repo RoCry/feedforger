@@ -55,5 +55,7 @@ jobs:
       with:
         name: "Feeds Update ${{ env.NOW }}"
         tag_name: latest
-        files: outputs/*
+        files: |
+          outputs/*
+          cache/feeds.sqlite
         prerelease: false 

@@ -7,7 +7,7 @@ from models import FeedItem
 
 
 class Database:
-    def __init__(self, db_path: str | Path = "cache/feeds.db"):
+    def __init__(self, db_path: str | Path = "cache/feeds.sqlite"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(exist_ok=True)
 
