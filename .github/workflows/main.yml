@@ -44,7 +44,7 @@ jobs:
       run: |
         echo "NOW=$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_ENV
 
-    - name: Run feed aggregator
+    - name: Run feed forger
       run: uv run main.py
     
     - name: Save cache

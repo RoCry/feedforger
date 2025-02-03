@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Set
+import itertools
 
 import aiosqlite
+from recipes import get_recipes
 from utils import logger
 
 
@@ -33,7 +35,7 @@ class Database:
     async def get_content(self, url: str, ttl: int = 1800) -> Optional[str]:
         """Get cached feed content if not expired."""
         cutoff = int((datetime.now(UTC) - timedelta(seconds=ttl)).timestamp())
-        
+
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
                 """
@@ -49,15 +51,15 @@ class Database:
         return None
 
     async def set_content(
-        self, 
-        url: str, 
-        content: Optional[str], 
+        self,
+        url: str,
+        content: Optional[str],
         success: bool = True,
-        error_reason: Optional[str] = None
+        error_reason: Optional[str] = None,
     ) -> None:
         """
         Update cache with new content.
-        
+
         Args:
             url: Feed URL
             content: Feed content, None if fetch failed
@@ -96,16 +98,58 @@ class Database:
                 )
             await db.commit()
 
-    async def cleanup(self, days: int = 30) -> int:
-        """Delete entries older than specified days."""
-        cutoff = int((datetime.now(UTC) - timedelta(days=days)).timestamp())
+    async def get_all_feed_ids(self) -> Set[str]:
+        """Get all feed IDs from database."""
         async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("SELECT id FROM feeds") as cursor:
+                return {row[0] for row in await cursor.fetchall()}
+
+    async def cleanup(self, days: int = 7) -> int:
+        """
+        Delete entries that are:
+        1. Older than specified days AND successful (continue_fail_count = 0)
+        2. No longer in recipes (orphaned entries)
+        """
+        cutoff = int((datetime.now(UTC) - timedelta(days=days)).timestamp())
+        deleted = 0
+
+        async with aiosqlite.connect(self.db_path) as db:
+            # Delete old successful entries
             async with db.execute(
-                # only delete success feeds
                 "DELETE FROM feeds WHERE updated_at < ? AND continue_fail_count = 0",
                 (cutoff,),
             ) as cursor:
-                deleted = cursor.rowcount
-                await db.commit()
-                logger.info(f"Cleaned up {deleted} old entries")
-                return deleted
+                deleted += cursor.rowcount
+
+            # Get current URLs from recipes and database
+            recipe_urls = {
+                url for feed in get_recipes().values() for url in feed["urls"]
+            }
+            existing_urls = await self.get_all_feed_ids()
+
+            # Find URLs to remove
+            urls_to_remove = existing_urls - recipe_urls
+            if urls_to_remove:
+                logger.info(f"Feeds to remove: {len(urls_to_remove)}")
+
+                # Delete orphaned entries in batches
+                batch_size = 500  # SQLite has a limit on query parameters
+                for i in range(0, len(urls_to_remove), batch_size):
+                    url_batch = list(
+                        itertools.islice(urls_to_remove, i, i + batch_size)
+                    )
+                    placeholders = ",".join("?" * len(url_batch))
+                    async with db.execute(
+                        f"DELETE FROM feeds WHERE id IN ({placeholders})",
+                        tuple(url_batch),
+                    ) as cursor:
+                        deleted += cursor.rowcount
+
+            # Log new feeds that will be added
+            new_urls = recipe_urls - existing_urls
+            if new_urls:
+                logger.info(f"New feeds to add: {len(new_urls)}")
+
+            await db.commit()
+            logger.info(f"Cleaned up {deleted} entries (old or orphaned)")
+            return deleted
