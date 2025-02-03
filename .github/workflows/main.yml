@@ -1,4 +1,4 @@
-name: Feed Aggregator
+name: Feed Forger
 
 on:
   schedule:
@@ -9,7 +9,7 @@ on:
       - deploy
 
 jobs:
-  aggregate-feeds:
+  forge-feeds:
     runs-on: ubuntu-latest
     permissions:
       contents: write
