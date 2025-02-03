@@ -36,22 +36,22 @@ async def process_feed(
     """Process a feed configuration and return feed items."""
     items = []
     week_ago = datetime.now(UTC) - timedelta(days=7)
-    
+
     for url in feed_config["urls"]:
         try:
             content = await fetch_feed(client, url)
             feed = feedparser.parse(content)
             logger.info(f"Processing {len(feed.entries)} entries from {url}")
-            
+
             for entry in feed.entries:
                 published = parse_date(entry.get("published", ""))
                 if published < week_ago:
                     logger.debug(f"Skipping old entry from {published}")
                     continue
-                
+
                 if not should_include_item(entry, feed_config.get("filters", [])):
                     continue
-                
+
                 # Extract author information if available
                 author = None
                 if entry.get("author_detail"):
@@ -65,7 +65,7 @@ async def process_feed(
                 # Get the best content available
                 content_html = None
                 content_text = None
-                
+
                 # Try to get content from various possible fields
                 if entry.get("content"):
                     content = entry.get("content")[0]
@@ -73,17 +73,17 @@ async def process_feed(
                         content_html = content.get("value")
                     else:
                         content_text = content.get("value")
-                
+
                 if not content_html and not content_text:
                     content_text = entry.get("summary", "")
-                
+
                 # Get tags from categories if available
                 tags = []
                 if entry.get("tags"):
                     tags.extend(tag.get("term", "") for tag in entry.get("tags"))
                 elif entry.get("categories"):
                     tags.extend(entry.get("categories"))
-                
+
                 item = FeedItem(
                     id=entry.get("id") or entry.link,  # Fallback to link if no id
                     url=entry.link,
@@ -95,13 +95,13 @@ async def process_feed(
                     author=author,
                     tags=tags,
                 )
-                
+
                 await db.upsert_item(item)
                 items.append(item)
-                
+
         except Exception as e:
             logger.error(f"Error processing {url}: {e}", exc_info=True)
-            
+
     return items
 
 

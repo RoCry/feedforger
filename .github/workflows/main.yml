@@ -2,8 +2,11 @@ name: Feed Aggregator
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # Run every 4 hours
+    - cron: '45 * * * *' # every hour at 45 min
   workflow_dispatch:  # Allow manual trigger
+  push:
+  branches:
+    - deploy
 
 jobs:
   aggregate-feeds:
@@ -13,6 +16,8 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+      with:
+        ref: deploy
 
     - name: Install uv
       uses: astral-sh/setup-uv@v5
