@@ -5,14 +5,7 @@ _recipes = {
             "https://github.com/nst.atom",
             "https://github.com/omz.atom",
             "https://github.com/peng-zhihui.atom",
-            "https://github.com/qhduan.atom",
-            "https://github.com/rentzsch.atom",
-            "https://github.com/rnapier.atom",
-            "https://github.com/robb.atom",
-            "https://github.com/samvermette.atom",
-            "https://github.com/stefanoa.atom",
-            "https://github.com/theowenyoung.atom",
-            "https://github.com/ishan0102.atom",
+            "https://github.com/someone-not-found-blabla.atom",
         ],
         "filters": [
             {

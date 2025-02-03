@@ -20,7 +20,8 @@ class Database:
                     id TEXT PRIMARY KEY,
                     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
                     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-                    content TEXT NOT NULL
+                    content TEXT,
+                    continue_fail_count INTEGER NOT NULL DEFAULT 0
                 )
             """)
             await db.execute(
@@ -31,38 +32,59 @@ class Database:
     async def get_content(self, url: str, ttl: int = 1800) -> Optional[str]:
         """Get cached feed content if not expired."""
         cutoff = int((datetime.now(UTC) - timedelta(seconds=ttl)).timestamp())
-        # logger.debug(f"Checking cache for {url} with cutoff {cutoff}")
         
         async with aiosqlite.connect(self.db_path) as db:
             async with db.execute(
                 """
-                SELECT content 
+                SELECT content, continue_fail_count
                 FROM feeds 
                 WHERE id = ? AND updated_at > ?
                 """,
                 (url, cutoff),
             ) as cursor:
                 if row := await cursor.fetchone():
-                    # logger.debug(f"Using cached content for {url}")
-                    return row[0]
+                    if row[0] is not None:  # Has valid content
+                        return row[0]
         return None
 
-    async def set_content(self, url: str, content: str) -> None:
-        """Update cache with new content."""
+    async def set_content(self, url: str, content: Optional[str], success: bool = True) -> None:
+        """
+        Update cache with new content.
+        
+        Args:
+            url: Feed URL
+            content: Feed content, None if fetch failed
+            success: Whether the fetch was successful
+        """
         now = int(datetime.now(UTC).timestamp())
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO feeds (id, content, created_at, updated_at) 
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET 
-                    updated_at = excluded.updated_at,
-                    content = excluded.content
-                """,
-                (url, content, now, now),
-            )
+            if success:
+                # Reset fail count on success
+                await db.execute(
+                    """
+                    INSERT INTO feeds (id, content, created_at, updated_at, continue_fail_count) 
+                    VALUES (?, ?, ?, ?, 0)
+                    ON CONFLICT(id) DO UPDATE SET 
+                        updated_at = excluded.updated_at,
+                        content = excluded.content,
+                        continue_fail_count = 0
+                    """,
+                    (url, content, now, now),
+                )
+            else:
+                # Increment fail count on failure
+                await db.execute(
+                    """
+                    INSERT INTO feeds (id, content, created_at, updated_at, continue_fail_count) 
+                    VALUES (?, NULL, ?, ?, 1)
+                    ON CONFLICT(id) DO UPDATE SET 
+                        updated_at = excluded.updated_at,
+                        content = excluded.content,
+                        continue_fail_count = continue_fail_count + 1
+                    """,
+                    (url, now, now),
+                )
             await db.commit()
-            # logger.debug(f"Updated cache for {url}")
 
     async def cleanup(self, days: int = 30) -> int:
         """Delete entries older than specified days."""
