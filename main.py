@@ -13,12 +13,20 @@ from filters import should_include_item
 from utils import logger
 
 
-async def fetch_feed(client: httpx.AsyncClient, url: str) -> str:
-    """Fetch feed content from URL."""
-    logger.info(f"Fetching feed from {url}")
+async def fetch_feed(client: httpx.AsyncClient, url: str, db: Database) -> str:
+    # Try to get from cache first
+    if cached := await db.get_content(url):
+        return cached
+        
+    logger.info(f"Fetching feed from '{url}'")
+    # Fetch fresh content
     response = await client.get(url)
     response.raise_for_status()
-    return response.text
+    content = response.text
+    
+    # Update cache
+    await db.set_content(url, content)
+    return content
 
 
 def parse_date(date_str: str) -> datetime:
@@ -39,14 +47,14 @@ async def process_feed(
 
     for url in feed_config["urls"]:
         try:
-            content = await fetch_feed(client, url)
+            content = await fetch_feed(client, url, db)
             feed = feedparser.parse(content)
             logger.info(f"Processing {len(feed.entries)} entries from {url}")
 
             for entry in feed.entries:
                 published = parse_date(entry.get("published", ""))
                 if published < week_ago:
-                    logger.debug(f"Skipping old entry from {published}")
+                    # logger.debug(f"Skipping old entry from {published}")
                     continue
 
                 if not should_include_item(entry, feed_config.get("filters", [])):
@@ -85,7 +93,7 @@ async def process_feed(
                     tags.extend(entry.get("categories"))
 
                 item = FeedItem(
-                    id=entry.get("id") or entry.link,  # Fallback to link if no id
+                    id=entry.link,
                     url=entry.link,
                     title=entry.title,
                     content_text=content_text,
@@ -95,8 +103,7 @@ async def process_feed(
                     author=author,
                     tags=tags,
                 )
-
-                await db.upsert_item(item)
+                
                 items.append(item)
 
         except Exception as e:
@@ -109,13 +116,15 @@ async def main():
     logger.info("Starting feed aggregation")
     output_dir = Path("outputs")
     output_dir.mkdir(exist_ok=True)
-
+    
     db = Database()
     await db.init()
-
-    # Configure client with timeouts and redirect handling
+    
+    # Cleanup old entries
+    await db.cleanup()
+    
     async with httpx.AsyncClient(
-        timeout=30.0,  # 30 seconds timeout
+        timeout=30.0,
         follow_redirects=True,
         max_redirects=5,
     ) as client:
@@ -132,7 +141,7 @@ async def main():
 
             output_path = output_dir / f"{feed_name}.json"
             output_path.write_text(feed.model_dump_json(indent=2))
-            logger.info(f"Generated feed file: {output_path}")
+            logger.info(f"Generated feed file: {output_path}, {len(items)} items")
 
 
 if __name__ == "__main__":
