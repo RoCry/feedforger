@@ -59,17 +59,41 @@ async def process_feed(
                         name=entry.get("author_detail", {}).get("name"),
                         url=entry.get("author_detail", {}).get("href"),
                     )
+                elif entry.get("author"):  # Fallback to simple author string
+                    author = Author(name=entry.get("author"))
+
+                # Get the best content available
+                content_html = None
+                content_text = None
+                
+                # Try to get content from various possible fields
+                if entry.get("content"):
+                    content = entry.get("content")[0]
+                    if content.get("type") == "text/html":
+                        content_html = content.get("value")
+                    else:
+                        content_text = content.get("value")
+                
+                if not content_html and not content_text:
+                    content_text = entry.get("summary", "")
+                
+                # Get tags from categories if available
+                tags = []
+                if entry.get("tags"):
+                    tags.extend(tag.get("term", "") for tag in entry.get("tags"))
+                elif entry.get("categories"):
+                    tags.extend(entry.get("categories"))
                 
                 item = FeedItem(
-                    id=entry.link,
+                    id=entry.get("id") or entry.link,  # Fallback to link if no id
                     url=entry.link,
                     title=entry.title,
-                    content_text=entry.get("summary"),
-                    content_html=entry.get("content", [{}])[0].get("value"),
+                    content_text=content_text,
+                    content_html=content_html,
                     summary=entry.get("summary"),
                     date_published=published,
                     author=author,
-                    tags=entry.get("tags", []),
+                    tags=tags,
                 )
                 
                 await db.upsert_item(item)
