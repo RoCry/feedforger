@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
+from typing import Optional
 import urllib.parse
 
 import feedparser
@@ -14,12 +15,11 @@ from utils import logger
 from network import FeedFetcher
 
 
-def parse_date(date_str: str) -> datetime:
+def parse_date(date_str: str) -> Optional[datetime]:
     try:
         return date_parser.parse(date_str).astimezone(UTC)
-    except (ValueError, TypeError) as e:
-        logger.warning(f"Failed to parse date '{date_str}': {e}")
-        return datetime.now(UTC)
+    except (ValueError, TypeError):
+        return None
 
 
 async def process_feed_entries(
@@ -38,6 +38,9 @@ async def process_feed_entries(
             logger.warning(f"No date found for {entry.link}")
             continue
         published = parse_date(dt)
+        if published is None:
+            logger.warning(f"Failed to parse date: '{dt}' for {entry.link}")
+            continue
         if published < week_ago:
             continue
 
@@ -138,7 +141,9 @@ async def process_feeds(
         return items
 
     # Fetch all uncached feeds concurrently
-    logger.info(f"{feed_name} fetching {len(urls_to_fetch)} uncached feeds, total {total_urls}")
+    logger.info(
+        f"{feed_name} fetching {len(urls_to_fetch)} uncached feeds, total {total_urls}"
+    )
     results = await fetcher.fetch_urls(feed_name, urls_to_fetch)
 
     # Process results and update cache sequentially
@@ -199,7 +204,9 @@ async def main():
 
             output_path = output_dir / f"{feed_name}.json"
             output_path.write_text(feed.model_dump_json(indent=2, exclude_none=True))
-            logger.info(f"{feed_name} generated feed file: {output_path}, {len(items)} items")
+            logger.info(
+                f"{feed_name} generated feed file: {output_path}, {len(items)} items"
+            )
     finally:
         await fetcher.close()
 
