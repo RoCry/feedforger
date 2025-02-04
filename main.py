@@ -65,14 +65,21 @@ async def process_feed_entries(
         # Get content
         content_html = None
         content_text = None
+        summary = None
         if entry.get("content"):
             content = entry.get("content")[0]
             if content.get("type") == "text/html":
                 content_html = content.get("value")
             else:
                 content_text = content.get("value")
-        if not content_html and not content_text:
-            content_text = entry.get("summary", "")
+            summary = content.get("summary")
+        else:
+            summary = entry.get("summary")
+            if summary and summary.startswith("<"):
+                content_html = summary
+            else:
+                content_text = summary
+            summary = None  # prefer put summary in content
 
         # Get images
         image = None
@@ -97,7 +104,7 @@ async def process_feed_entries(
             title=entry.title,
             content_text=content_text,
             content_html=content_html,
-            summary=entry.get("summary"),
+            summary=summary,
             date_published=published,
             author=author,
             tags=tags,
