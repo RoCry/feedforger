@@ -104,6 +104,14 @@ class Database:
             async with db.execute("SELECT id FROM feeds") as cursor:
                 return {row[0] for row in await cursor.fetchall()}
 
+    async def get_failed_feed_ids(self, min_fail_count: int = 30) -> Set[str]:
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                "SELECT id FROM feeds WHERE continue_fail_count >= ?",
+                (min_fail_count,),
+            ) as cursor:
+                return {row[0] for row in await cursor.fetchall()}
+
     async def cleanup(self, days: int = 7) -> int:
         """
         Delete entries that are:
