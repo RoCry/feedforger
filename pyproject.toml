@@ -9,5 +9,6 @@ dependencies = [
     "feedparser",
     "python-dateutil",
     "aiosqlite",
-    "pydantic"
+    "pydantic",
+    "beautifulsoup4>=4.13.3",
 ]
