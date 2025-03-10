@@ -1,9 +1,10 @@
-from datetime import datetime, timedelta, UTC
+import itertools
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Set
-import itertools
 
 import aiosqlite
+
 from recipes import get_recipes
 from utils import logger
 
@@ -158,9 +159,7 @@ class Database:
                 deleted += cursor.rowcount
 
             # Get current URLs from recipes and database
-            recipe_urls = {
-                url for feed in get_recipes().values() for url in feed.urls
-            }
+            recipe_urls = {url for feed in get_recipes().values() for url in feed.urls}
             existing_urls = await self.get_all_feed_ids()
 
             # Find URLs to remove

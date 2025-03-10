@@ -1,9 +1,12 @@
 import logging
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, Dict, Optional
+
 from bs4 import BeautifulSoup
-from typing import Dict, Any
+from dateutil import parser as date_parser
 
 
 def setup_logger(name: str = "feedforger") -> logging.Logger:
@@ -94,3 +97,10 @@ def extract_main_content(html: str, url: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error extracting content from {url}: {e}")
         return result
+
+
+def parse_date(date_str: str) -> Optional[datetime]:
+    try:
+        return date_parser.parse(date_str).astimezone(UTC)
+    except (ValueError, TypeError):
+        return None

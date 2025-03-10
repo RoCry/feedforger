@@ -1,4 +1,4 @@
-from models import FeedConfig, FeedFilter, RecipeCollection
+from models import FeedConfig, RecipeCollection
 
 # Define recipes using Pydantic models
 _recipe_data = RecipeCollection(
