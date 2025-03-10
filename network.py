@@ -5,6 +5,7 @@ import httpx
 from utils import logger
 
 
+# network util, get content from urls with concurrency control
 class FeedFetcher:
     def __init__(
         self,
@@ -19,7 +20,6 @@ class FeedFetcher:
         self.semaphore = asyncio.Semaphore(max_concurrent)
 
     async def close(self):
-        """Close the HTTP client."""
         await self.client.aclose()
 
     async def fetch_url(self, url: str) -> tuple[str, Optional[str], Optional[str]]:
@@ -38,6 +38,7 @@ class FeedFetcher:
                 logger.error(f"Failed to fetch '{url}' {error_msg}")
                 return url, None, error_msg
 
+    # returns list of (url, content, error_message)
     async def fetch_urls(
         self, feed_name: str, urls: List[str]
     ) -> List[tuple[str, Optional[str], Optional[str]]]:
