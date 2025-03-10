@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional, List, Dict
+from typing import Optional, List
 import httpx
 
 from utils import logger

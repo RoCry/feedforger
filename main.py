@@ -23,7 +23,7 @@ def parse_date(date_str: str) -> Optional[datetime]:
 
 
 async def process_feed_entries(
-    content: str, feed_config: dict, week_ago: datetime
+    content: str, feed_config: dict, ignore_before_time: datetime
 ) -> list[FeedItem]:
     """Process a single feed's content and return items."""
     items = []
@@ -41,7 +41,7 @@ async def process_feed_entries(
         if published is None:
             logger.warning(f"Failed to parse date: '{dt}' for {entry.link}")
             continue
-        if published < week_ago:
+        if published < ignore_before_time:
             continue
 
         if not should_include_item(entry, feed_config.get("filters", [])):
@@ -134,7 +134,9 @@ async def process_feeds(
         if cached := await db.get_content(url):
             cache_hits += 1
             try:
-                feed_items = await process_feed_entries(cached, feed_config, week_ago)
+                feed_items = await process_feed_entries(
+                    cached, feed_config, ignore_before_time=week_ago
+                )
                 items.extend(feed_items)
             except Exception as e:
                 logger.error(
@@ -159,27 +161,28 @@ async def process_feeds(
         processed += 1
         # Update cache first
         await db.set_content(url, content, success=error is None, error_reason=error)
-
         # Process content if successful
-        if content:
-            try:
-                feed_items = await process_feed_entries(content, feed_config, week_ago)
-                items.extend(feed_items)
-                logger.info(
-                    f"{feed_name} processed {len(feed_items)} entries from {url} ({processed}/{len(urls_to_fetch)})"
-                )
-            except Exception as e:
-                logger.error(f"{feed_name} error processing {url}: {e}", exc_info=True)
-        else:
+        if not content:
             logger.warning(
                 f"{feed_name} skipping {url} due to fetch failure ({processed}/{len(urls_to_fetch)})"
             )
+            continue
 
+        try:
+            feed_items = await process_feed_entries(
+                content, feed_config, ignore_before_time=week_ago
+            )
+            items.extend(feed_items)
+            logger.info(
+                f"{feed_name} processed {len(feed_items)} entries from {url} ({processed}/{len(urls_to_fetch)})"
+            )
+        except Exception as e:
+            logger.error(f"{feed_name} error processing {url}: {e}", exc_info=True)
     return items
 
 
 async def main():
-    logger.info("Starting feed aggregation")
+    logger.info("Starting feed forging")
     output_dir = Path("outputs")
     output_dir.mkdir(exist_ok=True)
 
@@ -194,7 +197,7 @@ async def main():
             items = await process_feeds(fetcher, db, feed_name, feed_config)
 
             feed_url = f"https://github.com/RoCry/feedforger/releases/download/latest/{urllib.parse.quote(feed_name)}.json"
-            home_url = f"https://github.com/RoCry/feedforger/releases/tag/latest"
+            home_url = "https://github.com/RoCry/feedforger/releases/tag/latest"
 
             feed = Feed(
                 title=feed_name,
