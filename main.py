@@ -6,6 +6,7 @@ from typing import List, Optional
 
 import feedparser
 from dateutil import parser as date_parser
+import json
 
 from db import Database
 from filters import should_include_item
@@ -148,7 +149,16 @@ async def fulfill_items_content(
     logger.info(
         f"{feed_name} checking cache for {len(urls_to_fulfill)} items to fulfill"
     )
-    cached_contents = await db.get_items_content(urls_to_fulfill)
+    cached_json_contents = await db.batch_get_content(urls_to_fulfill)
+    
+    # Parse JSON strings into content dictionaries
+    cached_contents = {}
+    for url, json_content in cached_json_contents.items():
+        if json_content:
+            try:
+                cached_contents[url] = json.loads(json_content)
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse cached JSON for {url}")
 
     # Apply cached content to items
     for url, content in cached_contents.items():
@@ -177,7 +187,14 @@ async def fulfill_items_content(
     content_results = await fetcher.fetch_items_content(feed_name, urls_to_fetch)
 
     # Update cache with new content
-    await db.set_items_content(content_results)
+    # Convert content to JSON strings before storing
+    for url, (content, success) in content_results.items():
+        if content and success:
+            json_content = json.dumps(content)
+            await db.set_content(url, json_content, success)
+        else:
+            error_reason = content.get("error") if content else "Unknown error"
+            await db.set_content(url, None, success, error_reason)
 
     # Apply fetched content to items
     for url, (content, _) in content_results.items():
