@@ -24,6 +24,11 @@ _recipe_data = RecipeCollection(
                 "https://www.reddit.com/r/rust.rss",
             ]
         ),
+        "Small Web (Comics)": FeedConfig(
+            urls=[
+                "https://kagi.com/api/v1/smallweb/feed/?comic",
+            ],
+        ),
     }
 )
 

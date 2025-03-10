@@ -1,18 +1,18 @@
 import asyncio
-from datetime import datetime, timedelta, UTC
-from pathlib import Path
-from typing import Optional
 import urllib.parse
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import List, Optional
 
 import feedparser
 from dateutil import parser as date_parser
 
-from models import FeedItem, Feed, Author, FeedConfig
 from db import Database
-from recipes import get_recipes
 from filters import should_include_item
-from utils import logger
+from models import Author, Feed, FeedConfig, FeedItem
 from network import FeedFetcher
+from recipes import get_recipes
+from utils import logger
 
 
 def parse_date(date_str: str) -> Optional[datetime]:
@@ -117,6 +117,84 @@ async def process_feed_entries(
     return items
 
 
+async def fulfill_items_content(
+    fetcher: FeedFetcher, db: Database, feed_name: str, items: List[FeedItem]
+) -> List[FeedItem]:
+    """
+    Fulfill content for feed items by fetching full content from their URLs.
+    Returns the updated list of items.
+    """
+    if not items:
+        return items
+
+    # Get URLs that need fulfillment (items with minimal content)
+    urls_to_fulfill = []
+    url_to_item_map = {}
+
+    for item in items:
+        # Skip items that already have substantial content
+        has_substantial_content = (
+            item.content_html and len(item.content_html) > 500
+        ) or (item.content_text and len(item.content_text) > 300)
+        if not has_substantial_content:
+            urls_to_fulfill.append(item.url)
+            url_to_item_map[item.url] = item
+
+    if not urls_to_fulfill:
+        logger.info(f"{feed_name} no items need content fulfillment")
+        return items
+
+    # Check cache first
+    logger.info(
+        f"{feed_name} checking cache for {len(urls_to_fulfill)} items to fulfill"
+    )
+    cached_contents = await db.get_items_content(urls_to_fulfill)
+
+    # Apply cached content to items
+    for url, content in cached_contents.items():
+        if url in url_to_item_map and content:
+            item = url_to_item_map[url]
+            # Update item with fulfilled content
+            if content.get("content_html"):
+                item.content_html = content["content_html"]
+            if content.get("content_text"):
+                item.content_text = content["content_text"]
+            # Update title if it was empty or very short
+            if content.get("title") and (not item.title or len(item.title) < 10):
+                item.title = content["title"]
+
+    # Remove URLs that were successfully fulfilled from cache
+    urls_to_fetch = [url for url in urls_to_fulfill if url not in cached_contents]
+
+    if not urls_to_fetch:
+        logger.info(
+            f"{feed_name} all {len(urls_to_fulfill)} items were fulfilled from cache"
+        )
+        return items
+
+    # Fetch remaining URLs
+    logger.info(f"{feed_name} fetching content for {len(urls_to_fetch)} items")
+    content_results = await fetcher.fetch_items_content(feed_name, urls_to_fetch)
+
+    # Update cache with new content
+    await db.set_items_content(content_results)
+
+    # Apply fetched content to items
+    for url, (content, _) in content_results.items():
+        if url in url_to_item_map and content:
+            item = url_to_item_map[url]
+            # Update item with fulfilled content
+            if content.get("content_html"):
+                item.content_html = content["content_html"]
+            if content.get("content_text"):
+                item.content_text = content["content_text"]
+            # Update title if it was empty or very short
+            if content.get("title") and (not item.title or len(item.title) < 10):
+                item.title = content["title"]
+
+    return items
+
+
 async def process_feeds(
     fetcher: FeedFetcher, db: Database, feed_name: str, feed_config: FeedConfig
 ) -> list[FeedItem]:
@@ -147,37 +225,44 @@ async def process_feeds(
 
     if not urls_to_fetch:
         logger.info(f"{feed_name} all {total_urls} feeds were cached")
-        return items
+    else:
+        # Fetch all uncached feeds concurrently
+        logger.info(
+            f"{feed_name} fetching {len(urls_to_fetch)} uncached feeds, total {total_urls}"
+        )
+        results = await fetcher.fetch_urls(feed_name, urls_to_fetch)
 
-    # Fetch all uncached feeds concurrently
-    logger.info(
-        f"{feed_name} fetching {len(urls_to_fetch)} uncached feeds, total {total_urls}"
-    )
-    results = await fetcher.fetch_urls(feed_name, urls_to_fetch)
+        # Process results and update cache sequentially
+        processed = 0
+        for url, content, error in results:
+            processed += 1
+            # Update cache first
+            await db.set_content(
+                url, content, success=error is None, error_reason=error
+            )
+            # Process content if successful
+            if not content:
+                logger.warning(
+                    f"{feed_name} skipping {url} due to fetch failure ({processed}/{len(urls_to_fetch)})"
+                )
+                continue
 
-    # Process results and update cache sequentially
-    processed = 0
-    for url, content, error in results:
-        processed += 1
-        # Update cache first
-        await db.set_content(url, content, success=error is None, error_reason=error)
-        # Process content if successful
-        if not content:
-            logger.warning(
-                f"{feed_name} skipping {url} due to fetch failure ({processed}/{len(urls_to_fetch)})"
-            )
-            continue
+            try:
+                feed_items = await process_feed_entries(
+                    content, feed_config, ignore_before_time=week_ago
+                )
+                items.extend(feed_items)
+                logger.info(
+                    f"{feed_name} processed {len(feed_items)} entries from {url} ({processed}/{len(urls_to_fetch)})"
+                )
+            except Exception as e:
+                logger.error(f"{feed_name} error processing {url}: {e}", exc_info=True)
 
-        try:
-            feed_items = await process_feed_entries(
-                content, feed_config, ignore_before_time=week_ago
-            )
-            items.extend(feed_items)
-            logger.info(
-                f"{feed_name} processed {len(feed_items)} entries from {url} ({processed}/{len(urls_to_fetch)})"
-            )
-        except Exception as e:
-            logger.error(f"{feed_name} error processing {url}: {e}", exc_info=True)
+    # Fulfill item content if enabled
+    if feed_config.fulfill and items:
+        logger.info(f"{feed_name} fulfilling content for {len(items)} items")
+        items = await fulfill_items_content(fetcher, db, feed_name, items)
+
     return items
 
 
