@@ -28,7 +28,7 @@ _recipe_data = RecipeCollection(
             urls=[
                 "https://kagi.com/api/v1/smallweb/feed/?comic",
             ],
-            fulfill=True,
+            fulfill=False,
         ),
     }
 )

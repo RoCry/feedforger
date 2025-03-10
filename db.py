@@ -76,7 +76,6 @@ class Database:
                     url, content = row
                     if content is not None:  # Only include valid content
                         result[url] = content
-
         return result
 
     async def set_content(

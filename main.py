@@ -2,7 +2,7 @@ import asyncio
 import urllib.parse
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import feedparser
 from dateutil import parser as date_parser
@@ -23,7 +23,70 @@ def parse_date(date_str: str) -> Optional[datetime]:
         return None
 
 
-async def process_feed_entries(
+def _extract_author(entry: dict, feed: dict) -> Optional[Author]:
+    """Extract author information from a feed entry."""
+    author = entry.get("author")
+    if not author:
+        author = feed.feed.get("author")
+        
+    if isinstance(author, dict):
+        return Author(
+            name=author.get("name"),
+            url=author.get("uri") or author.get("href"),
+            avatar=author.get("avatar"),
+        )
+    elif isinstance(author, str):
+        return Author(name=author)
+    return None
+
+
+def _extract_content(entry: dict) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract content_html, content_text and summary from a feed entry."""
+    content_html = None
+    content_text = None
+    summary = None
+    
+    if entry.get("content"):
+        content = entry.get("content")[0]
+        if content.get("type") == "text/html":
+            content_html = content.get("value")
+        else:
+            content_text = content.get("value")
+        summary = content.get("summary")
+    else:
+        summary = entry.get("summary")
+        if summary and summary.startswith("<"):
+            content_html = summary
+        else:
+            content_text = summary
+        summary = None  # prefer put summary in content
+        
+    return content_html, content_text, summary
+
+
+def _extract_image(entry: dict) -> Optional[str]:
+    """Extract image URL from a feed entry."""
+    if media_content := entry.get("media_content", []):
+        for media in media_content:
+            if media.get("medium") == "image":
+                return media.get("url")
+    
+    if entry.get("image"):
+        return entry.get("image").get("href")
+    
+    return None
+
+
+def _extract_tags(entry: dict) -> List[str]:
+    """Extract tags from a feed entry."""
+    if entry.get("tags"):
+        return [tag.get("term", "") for tag in entry.get("tags")]
+    elif entry.get("categories"):
+        return entry.get("categories")
+    return []
+
+
+async def _process_feed_entries(
     content: str, feed_config: FeedConfig, ignore_before_time: datetime
 ) -> list[FeedItem]:
     """Process a single feed's content and return items."""
@@ -34,70 +97,29 @@ async def process_feed_entries(
     feed_language = feed.feed.get("language", "").split("-")[0].lower()
 
     for entry in feed.entries:
+        # Parse and validate date
         dt = entry.get("published", "") or entry.get("updated", "")
         if not dt:
             logger.warning(f"No date found for {entry.link}")
             continue
+            
         published = parse_date(dt)
         if published is None:
             logger.warning(f"Failed to parse date: '{dt}' for {entry.link}")
             continue
+            
         if published < ignore_before_time:
             continue
 
+        # Apply filters
         if not should_include_item(entry, feed_config.filters):
             continue
 
-        # Extract author information
-        author = entry.get("author")
-        if not author:
-            author = feed.feed.get("author")
-        if isinstance(author, dict):
-            author = Author(
-                name=author.get("name"),
-                url=author.get("uri") or author.get("href"),
-                avatar=author.get("avatar"),
-            )
-        elif isinstance(author, str):
-            author = Author(name=author)
-        else:
-            author = None
-
-        # Get content
-        content_html = None
-        content_text = None
-        summary = None
-        if entry.get("content"):
-            content = entry.get("content")[0]
-            if content.get("type") == "text/html":
-                content_html = content.get("value")
-            else:
-                content_text = content.get("value")
-            summary = content.get("summary")
-        else:
-            summary = entry.get("summary")
-            if summary and summary.startswith("<"):
-                content_html = summary
-            else:
-                content_text = summary
-            summary = None  # prefer put summary in content
-
-        # Get images
-        image = None
-        if media_content := entry.get("media_content", []):
-            for media in media_content:
-                if media.get("medium") == "image":
-                    image = media.get("url")
-                    break
-        if not image and entry.get("image"):
-            image = entry.get("image").get("href")
-
-        # Get tags
-        tags = []
-        if entry.get("tags"):
-            tags.extend(tag.get("term", "") for tag in entry.get("tags"))
-        elif entry.get("categories"):
-            tags.extend(entry.get("categories"))
+        # Extract all entry components
+        author = _extract_author(entry, feed)
+        content_html, content_text, summary = _extract_content(entry)
+        image = _extract_image(entry)
+        tags = _extract_tags(entry)
 
         item = FeedItem(
             id=entry.link,
@@ -118,121 +140,39 @@ async def process_feed_entries(
     return items
 
 
-async def fulfill_items_content(
+async def _fulfill_items_content_if_needed(
     fetcher: FeedFetcher, db: Database, feed_name: str, items: List[FeedItem]
 ) -> List[FeedItem]:
-    """
-    Fulfill content for feed items by fetching full content from their URLs.
-    Returns the updated list of items.
-    """
     if not items:
         return items
-
-    # Get URLs that need fulfillment (items with minimal content)
-    urls_to_fulfill = []
-    url_to_item_map = {}
-
-    for item in items:
-        # Skip items that already have substantial content
-        has_substantial_content = (
-            item.content_html and len(item.content_html) > 500
-        ) or (item.content_text and len(item.content_text) > 300)
-        if not has_substantial_content:
-            # Convert URL to string to avoid SQLite type issues
-            url = str(item.url)
-            urls_to_fulfill.append(url)
-            url_to_item_map[url] = item
-
-    if not urls_to_fulfill:
-        logger.info(f"{feed_name} no items need content fulfillment")
-        return items
-
-    # Check cache first
-    logger.info(
-        f"{feed_name} checking cache for {len(urls_to_fulfill)} items to fulfill"
-    )
-    cached_json_contents = await db.batch_get_content(urls_to_fulfill)
     
-    # Parse JSON strings into content dictionaries
-    cached_contents = {}
-    for url, json_content in cached_json_contents.items():
-        if json_content:
-            try:
-                cached_contents[url] = json.loads(json_content)
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse cached JSON for {url}")
+    # 1. ignore items that already have substantial content
+    # 2. fulfill with cache if possible
+    # 3. fetch and cache remaining items
 
-    # Apply cached content to items
-    for url, content in cached_contents.items():
-        if url in url_to_item_map and content:
-            item = url_to_item_map[url]
-            # Update item with fulfilled content
-            if content.get("content_html"):
-                item.content_html = content["content_html"]
-            if content.get("content_text"):
-                item.content_text = content["content_text"]
-            # Update title if it was empty or very short
-            if content.get("title") and (not item.title or len(item.title) < 10):
-                item.title = content["title"]
-
-    # Remove URLs that were successfully fulfilled from cache
-    urls_to_fetch = [url for url in urls_to_fulfill if url not in cached_contents]
-
-    if not urls_to_fetch:
-        logger.info(
-            f"{feed_name} all {len(urls_to_fulfill)} items were fulfilled from cache"
-        )
-        return items
-
-    # Fetch remaining URLs
-    logger.info(f"{feed_name} fetching content for {len(urls_to_fetch)} items")
-    content_results = await fetcher.fetch_items_content(feed_name, urls_to_fetch)
-
-    # Update cache with new content
-    # Convert content to JSON strings before storing
-    for url, (content, success) in content_results.items():
-        if content and success:
-            json_content = json.dumps(content)
-            await db.set_content(url, json_content, success)
-        else:
-            error_reason = content.get("error") if content else "Unknown error"
-            await db.set_content(url, None, success, error_reason)
-
-    # Apply fetched content to items
-    for url, (content, _) in content_results.items():
-        if url in url_to_item_map and content:
-            item = url_to_item_map[url]
-            # Update item with fulfilled content
-            if content.get("content_html"):
-                item.content_html = content["content_html"]
-            if content.get("content_text"):
-                item.content_text = content["content_text"]
-            # Update title if it was empty or very short
-            if content.get("title") and (not item.title or len(item.title) < 10):
-                item.title = content["title"]
-
+    # TODO: implement
+ 
     return items
 
 
-async def process_feeds(
-    fetcher: FeedFetcher, db: Database, feed_name: str, feed_config: FeedConfig
-) -> list[FeedItem]:
-    """Process all feeds for a configuration."""
+async def _process_cached_feeds(
+    db: Database, 
+    feed_name: str, 
+    feed_config: FeedConfig, 
+    ignore_before_time: datetime
+) -> Tuple[List[FeedItem], List[str]]:
+    """Process cached feeds and return items and uncached URLs."""
     items = []
-    week_ago = datetime.now(UTC) - timedelta(days=7)
-
-    total_urls = len(feed_config.urls)
-    logger.info(f"{feed_name} processing {total_urls} feeds")
-
-    # First check cache for all URLs
     urls_to_fetch = []
     cache_hits = 0
+    total_urls = len(feed_config.urls)
+    
     for url in feed_config.urls:
         if cached := await db.get_content(url):
             cache_hits += 1
             try:
-                feed_items = await process_feed_entries(
-                    cached, feed_config, ignore_before_time=week_ago
+                feed_items = await _process_feed_entries(
+                    cached, feed_config, ignore_before_time
                 )
                 items.extend(feed_items)
             except Exception as e:
@@ -241,48 +181,107 @@ async def process_feeds(
                 )
         else:
             urls_to_fetch.append(url)
-
+            
     if not urls_to_fetch:
         logger.info(f"{feed_name} all {total_urls} feeds were cached")
     else:
-        # Fetch all uncached feeds concurrently
         logger.info(
             f"{feed_name} fetching {len(urls_to_fetch)} uncached feeds, total {total_urls}"
         )
-        results = await fetcher.fetch_urls(feed_name, urls_to_fetch)
+        
+    return items, urls_to_fetch
 
-        # Process results and update cache sequentially
-        processed = 0
-        for url, content, error in results:
-            processed += 1
-            # Update cache first
-            await db.set_content(
-                url, content, success=error is None, error_reason=error
+
+async def _process_uncached_feeds(
+    fetcher: FeedFetcher,
+    db: Database,
+    feed_name: str,
+    urls_to_fetch: List[str],
+    feed_config: FeedConfig,
+    ignore_before_time: datetime
+) -> List[FeedItem]:
+    """Fetch and process uncached feeds."""
+    items = []
+    
+    if not urls_to_fetch:
+        return items
+        
+    # Fetch all uncached feeds concurrently
+    results = await fetcher.fetch_urls(feed_name, urls_to_fetch)
+
+    # Process results and update cache sequentially
+    for processed, (url, content, error) in enumerate(results, 1):
+        # Update cache first
+        await db.set_content(
+            url, content, success=error is None, error_reason=error
+        )
+        
+        # Process content if successful
+        if not content:
+            logger.warning(
+                f"{feed_name} skipping {url} due to fetch failure ({processed}/{len(urls_to_fetch)})"
             )
-            # Process content if successful
-            if not content:
-                logger.warning(
-                    f"{feed_name} skipping {url} due to fetch failure ({processed}/{len(urls_to_fetch)})"
-                )
-                continue
+            continue
 
-            try:
-                feed_items = await process_feed_entries(
-                    content, feed_config, ignore_before_time=week_ago
-                )
-                items.extend(feed_items)
-                logger.info(
-                    f"{feed_name} processed {len(feed_items)} entries from {url} ({processed}/{len(urls_to_fetch)})"
-                )
-            except Exception as e:
-                logger.error(f"{feed_name} error processing {url}: {e}", exc_info=True)
+        try:
+            feed_items = await _process_feed_entries(
+                content, feed_config, ignore_before_time
+            )
+            items.extend(feed_items)
+            logger.info(
+                f"{feed_name} processed {len(feed_items)} entries from {url} ({processed}/{len(urls_to_fetch)})"
+            )
+        except Exception as e:
+            logger.error(f"{feed_name} error processing {url}: {e}", exc_info=True)
+            
+    return items
+
+
+async def process_feeds(
+    fetcher: FeedFetcher, db: Database, feed_name: str, feed_config: FeedConfig
+) -> list[FeedItem]:
+    """Process all feeds for a configuration."""
+    week_ago = datetime.now(UTC) - timedelta(days=7)
+    logger.info(f"{feed_name} processing {len(feed_config.urls)} feeds")
+
+    # Process cached feeds
+    cached_items, urls_to_fetch = await _process_cached_feeds(
+        db, feed_name, feed_config, week_ago
+    )
+    
+    # Process uncached feeds
+    uncached_items = await _process_uncached_feeds(
+        fetcher, db, feed_name, urls_to_fetch, feed_config, week_ago
+    )
+    
+    # Combine all items
+    all_items = cached_items + uncached_items
 
     # Fulfill item content if enabled
-    if feed_config.fulfill and items:
-        logger.info(f"{feed_name} fulfilling content for {len(items)} items")
-        items = await fulfill_items_content(fetcher, db, feed_name, items)
+    if feed_config.fulfill and all_items:
+        logger.info(f"{feed_name} fulfilling content for {len(all_items)} items")
+        all_items = await _fulfill_items_content_if_needed(fetcher, db, feed_name, all_items)
 
-    return items
+    return all_items
+
+
+def _create_feed(feed_name: str, items: List[FeedItem]) -> Feed:
+    """Create a Feed object from the processed items."""
+    feed_url = f"https://github.com/RoCry/feedforger/releases/download/latest/{urllib.parse.quote(feed_name)}.json"
+    home_url = "https://github.com/RoCry/feedforger/releases/tag/latest"
+    
+    return Feed(
+        title=feed_name,
+        items=sorted(items, key=lambda x: x.date_published, reverse=True),
+        description=f"Aggregated feed for {feed_name}",
+        home_page_url=home_url,
+        feed_url=feed_url,
+        user_comment="Generated by FeedForger",
+        language="en",
+        authors=[],
+        icon=None,
+        favicon=None,
+    )
 
 
 async def main():
@@ -298,26 +297,15 @@ async def main():
     try:
         for feed_name, feed_config in get_recipes().items():
             logger.info(f"{feed_name} processing")
+            
+            # Process feeds and get items
             items = await process_feeds(fetcher, db, feed_name, feed_config)
-
-            feed_url = f"https://github.com/RoCry/feedforger/releases/download/latest/{urllib.parse.quote(feed_name)}.json"
-            home_url = "https://github.com/RoCry/feedforger/releases/tag/latest"
-
-            feed = Feed(
-                title=feed_name,
-                items=sorted(items, key=lambda x: x.date_published, reverse=True),
-                description=f"Aggregated feed for {feed_name}",
-                home_page_url=home_url,
-                feed_url=feed_url,
-                user_comment="Generated by FeedForger",
-                language="en",
-                authors=[],
-                icon=None,
-                favicon=None,
-            )
-
+            
+            # Create and save feed
+            feed = _create_feed(feed_name, items)
             output_path = output_dir / f"{feed_name}.json"
             output_path.write_text(feed.model_dump_json(indent=2, exclude_none=True))
+            
             logger.info(
                 f"{feed_name} generated feed file: {output_path}, {len(items)} items"
             )
