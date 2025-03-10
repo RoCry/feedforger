@@ -6,14 +6,17 @@ def should_include_item(entry: dict[str, Any], filters: list[dict]) -> bool:
     if not filters:
         return True
 
-    for filter_rule in filters:
-        pattern = filter_rule["title"]
-        invert = filter_rule.get("invert", False)
-
+    for f in filters:
+        if not f.title:
+            # only support title filter for now
+            continue
         title = entry.get("title", "")
+        if not title:
+            # skip if no title
+            continue
 
-        matches = bool(re.search(pattern, title, re.IGNORECASE))
-        if invert:
+        matches = bool(re.search(f.title, title, re.IGNORECASE))
+        if f.invert:
             matches = not matches
 
         if not matches:
