@@ -160,7 +160,7 @@ class Database:
 
             # Get current URLs from recipes and database
             recipe_urls = {
-                url for feed in get_recipes().values() for url in feed["urls"]
+                url for feed in get_recipes().values() for url in feed.urls
             }
             existing_urls = await self.get_all_feed_ids()
 

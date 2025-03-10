@@ -49,7 +49,7 @@ class FeedFilter(BaseModel):
 class FeedConfig(BaseModel):
     urls: List[str]
     filters: List[FeedFilter] = Field(default_factory=list)
-    fulfill: bool  # whether to fetch content for each item
+    fulfill: bool = False  # whether to fetch content for each item
 
 
 class RecipeCollection(BaseModel):

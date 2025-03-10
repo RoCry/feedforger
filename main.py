@@ -138,8 +138,10 @@ async def fulfill_items_content(
             item.content_html and len(item.content_html) > 500
         ) or (item.content_text and len(item.content_text) > 300)
         if not has_substantial_content:
-            urls_to_fulfill.append(item.url)
-            url_to_item_map[item.url] = item
+            # Convert URL to string to avoid SQLite type issues
+            url = str(item.url)
+            urls_to_fulfill.append(url)
+            url_to_item_map[url] = item
 
     if not urls_to_fulfill:
         logger.info(f"{feed_name} no items need content fulfillment")
