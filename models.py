@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
+
 from pydantic import BaseModel, Field, HttpUrl
 
 
@@ -40,17 +41,16 @@ class Feed(BaseModel):
 
 
 class FeedFilter(BaseModel):
-    """Filter to include or exclude feed items based on title matching"""
+    # the pattern to match the title, optional for potential body filter
     title: Optional[str] = None
-    invert: bool = False
+    invert: bool = False  # whether to invert the match
 
 
 class FeedConfig(BaseModel):
-    """Configuration for a single feed recipe"""
     urls: List[str]
     filters: List[FeedFilter] = Field(default_factory=list)
+    fulfill: bool  # whether to fetch content for each item
 
 
 class RecipeCollection(BaseModel):
-    """Collection of all feed recipes"""
     recipes: Dict[str, FeedConfig]
