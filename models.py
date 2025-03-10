@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel, Field, HttpUrl
 
 
@@ -37,3 +37,20 @@ class Feed(BaseModel):
     authors: Optional[List[Author]] = None
     language: Optional[str] = None
     user_comment: Optional[str] = None
+
+
+class FeedFilter(BaseModel):
+    """Filter to include or exclude feed items based on title matching"""
+    title: Optional[str] = None
+    invert: bool = False
+
+
+class FeedConfig(BaseModel):
+    """Configuration for a single feed recipe"""
+    urls: List[str]
+    filters: List[FeedFilter] = Field(default_factory=list)
+
+
+class RecipeCollection(BaseModel):
+    """Collection of all feed recipes"""
+    recipes: Dict[str, FeedConfig]

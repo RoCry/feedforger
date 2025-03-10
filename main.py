@@ -7,7 +7,7 @@ import urllib.parse
 import feedparser
 from dateutil import parser as date_parser
 
-from models import FeedItem, Feed, Author
+from models import FeedItem, Feed, Author, FeedConfig
 from db import Database
 from recipes import get_recipes
 from filters import should_include_item
@@ -23,7 +23,7 @@ def parse_date(date_str: str) -> Optional[datetime]:
 
 
 async def process_feed_entries(
-    content: str, feed_config: dict, ignore_before_time: datetime
+    content: str, feed_config: FeedConfig, ignore_before_time: datetime
 ) -> list[FeedItem]:
     """Process a single feed's content and return items."""
     items = []
@@ -44,7 +44,7 @@ async def process_feed_entries(
         if published < ignore_before_time:
             continue
 
-        if not should_include_item(entry, feed_config.get("filters", [])):
+        if not should_include_item(entry, feed_config.filters):
             continue
 
         # Extract author information
@@ -118,19 +118,19 @@ async def process_feed_entries(
 
 
 async def process_feeds(
-    fetcher: FeedFetcher, db: Database, feed_name: str, feed_config: dict
+    fetcher: FeedFetcher, db: Database, feed_name: str, feed_config: FeedConfig
 ) -> list[FeedItem]:
     """Process all feeds for a configuration."""
     items = []
     week_ago = datetime.now(UTC) - timedelta(days=7)
 
-    total_urls = len(feed_config["urls"])
+    total_urls = len(feed_config.urls)
     logger.info(f"{feed_name} processing {total_urls} feeds")
 
     # First check cache for all URLs
     urls_to_fetch = []
     cache_hits = 0
-    for url in feed_config["urls"]:
+    for url in feed_config.urls:
         if cached := await db.get_content(url):
             cache_hits += 1
             try:
