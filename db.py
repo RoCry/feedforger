@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
-from typing import Optional, Set
+from typing import Dict, List, Optional, Set
 import itertools
 
 import aiosqlite
@@ -49,6 +49,35 @@ class Database:
                     if row[0] is not None:  # Has valid content
                         return row[0]
         return None
+
+    async def batch_get_content(
+        self, urls: List[str], ttl: int = 1800
+    ) -> Dict[str, Optional[str]]:
+        """Get cached feed content for multiple URLs if not expired."""
+        if not urls:
+            return {}
+
+        result = {url: None for url in urls}  # Initialize all URLs with None
+        cutoff = int((datetime.now(UTC) - timedelta(seconds=ttl)).timestamp())
+
+        # Create placeholders for the SQL query
+        placeholders = ",".join(["?"] * len(urls))
+
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                f"""
+                SELECT id, content
+                FROM feeds 
+                WHERE id IN ({placeholders}) AND updated_at > ?
+                """,
+                (*urls, cutoff),
+            ) as cursor:
+                async for row in cursor:
+                    url, content = row
+                    if content is not None:  # Only include valid content
+                        result[url] = content
+
+        return result
 
     async def set_content(
         self,
