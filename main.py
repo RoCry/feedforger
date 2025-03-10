@@ -10,7 +10,7 @@ from filters import should_include_item
 from models import Feed, FeedConfig, FeedItem
 from network import FeedFetcher
 from recipes import get_recipes
-from utils import logger, parse_date
+from utils import extract_main_content, logger, parse_date
 
 
 async def _process_feed_entries(
@@ -49,17 +49,123 @@ async def _process_feed_entries(
     return items
 
 
+def _has_substantial_content(item: FeedItem, min_length: int = 200) -> bool:
+    """Check if an item has substantial content."""
+    if item.content_html and len(item.content_html) > min_length:
+        return True
+    if item.content_text and len(item.content_text) > min_length:
+        return True
+    return False
+
+
 async def _fulfill_items_content_if_needed(
     fetcher: FeedFetcher, db: Database, feed_name: str, items: List[FeedItem]
 ) -> List[FeedItem]:
+    """Fetch and add content to feed items that lack substantial content."""
     if not items:
         return items
 
-    # 1. ignore items that already have substantial content
-    # 2. fulfill with cache if possible
-    # 3. fetch and cache remaining items
+    # Step 1: Filter items that need content fulfillment
+    items_needing_content = [
+        item for item in items if not _has_substantial_content(item)
+    ]
+    if not items_needing_content:
+        logger.info(f"{feed_name}: All {len(items)} items have substantial content")
+        return items
 
-    # TODO: implement
+    logger.info(
+        f"{feed_name}: {len(items_needing_content)}/{len(items)} items need content"
+    )
+
+    # Step 2: Check cache for items
+    urls_to_fetch = []
+    for item in items_needing_content:
+        url = str(item.url)
+        # Check if content is in cache
+        if cached_content := await db.get_content(url):
+            try:
+                # Use the utility function to extract content
+                content_data = extract_main_content(cached_content, url)
+
+                if content_data["content_html"] or content_data["content_text"]:
+                    item.content_html = (
+                        content_data["content_html"] or item.content_html
+                    )
+                    item.content_text = (
+                        content_data["content_text"] or item.content_text
+                    )
+                    # Update title if the current one is very short and we found a better one
+                    if (
+                        content_data["title"]
+                        and len(item.title) < 20
+                        and len(content_data["title"]) > len(item.title)
+                    ):
+                        item.title = content_data["title"]
+                    logger.debug(f"{feed_name}: Used cached content for {item.url}")
+                else:
+                    # Cache hit but failed to extract content, need to fetch again
+                    urls_to_fetch.append(item.url)
+            except Exception as e:
+                logger.error(
+                    f"{feed_name}: Error processing cached item {url}: {e}"
+                )
+                urls_to_fetch.append(url)
+        else:
+            urls_to_fetch.append(url)
+
+    # Step 3: Fetch remaining items
+    if urls_to_fetch:
+        logger.info(f"{feed_name}: Fetching content for {len(urls_to_fetch)} items")
+        results = await fetcher.fetch_urls(feed_name, urls_to_fetch)
+
+        # Process and update items with fetched content
+        for url, content, error in results:
+            # Find the item with this URL
+            item = next(
+                (item for item in items_needing_content if str(item.url) == url), None
+            )
+            if not item:
+                continue
+
+            # Update cache first
+            await db.set_content(
+                url, content, success=error is None, error_reason=error
+            )
+
+            # Skip if fetch failed
+            if not content:
+                logger.warning(
+                    f"{feed_name}: Failed to fetch content for {url}: {error}"
+                )
+                continue
+
+            try:
+                # Use the utility function to extract content
+                content_data = extract_main_content(content, url)
+
+                if content_data["content_html"] or content_data["content_text"]:
+                    item.content_html = (
+                        content_data["content_html"] or item.content_html
+                    )
+                    item.content_text = (
+                        content_data["content_text"] or item.content_text
+                    )
+                    # Update title if the current one is very short and we found a better one
+                    if (
+                        content_data["title"]
+                        and len(item.title) < 20
+                        and len(content_data["title"]) > len(item.title)
+                    ):
+                        item.title = content_data["title"]
+                    logger.debug(
+                        f"{feed_name}: Successfully extracted content for {url}"
+                    )
+                else:
+                    logger.warning(
+                        f"{feed_name}: Fetched content for {url} but couldn't extract meaningful content"
+                    )
+            except Exception as e:
+                logger.error(f"{feed_name}: Error extracting content from {url}: {e}")
 
     return items
 
