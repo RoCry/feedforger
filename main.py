@@ -49,11 +49,11 @@ async def _process_feed_entries(
     return items
 
 
-def _has_substantial_content(item: FeedItem, min_length: int = 200) -> bool:
+def _has_substantial_content(item: FeedItem) -> bool:
     """Check if an item has substantial content."""
-    if item.content_html and len(item.content_html) > min_length:
+    if item.content_html and len(item.content_html) > 700:
         return True
-    if item.content_text and len(item.content_text) > min_length:
+    if item.content_text and len(item.content_text) > 400:
         return True
     return False
 
