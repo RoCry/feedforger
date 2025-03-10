@@ -106,9 +106,7 @@ async def _fulfill_items_content_if_needed(
                     # Cache hit but failed to extract content, need to fetch again
                     urls_to_fetch.append(item.url)
             except Exception as e:
-                logger.error(
-                    f"{feed_name}: Error processing cached item {url}: {e}"
-                )
+                logger.error(f"{feed_name}: Error processing cached item {url}: {e}")
                 urls_to_fetch.append(url)
         else:
             urls_to_fetch.append(url)

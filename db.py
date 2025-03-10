@@ -1,11 +1,9 @@
-import itertools
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import aiosqlite
 
-from recipes import get_recipes
 from utils import logger
 
 
@@ -144,47 +142,47 @@ class Database:
     async def cleanup(self, days: int = 7) -> int:
         """
         Delete entries that are:
-        1. Older than specified days AND successful (continue_fail_count = 0)
-        2. No longer in recipes (orphaned entries)
+        1. Older than specified days
+        2. No longer in recipes (orphaned entries) # temporary disabled
         """
         cutoff = int((datetime.now(UTC) - timedelta(days=days)).timestamp())
         deleted = 0
 
         async with aiosqlite.connect(self.db_path) as db:
-            # Delete old successful entries
+            # Delete old entries
             async with db.execute(
-                "DELETE FROM feeds WHERE updated_at < ? AND continue_fail_count = 0",
+                "DELETE FROM feeds WHERE updated_at < ?",
                 (cutoff,),
             ) as cursor:
                 deleted += cursor.rowcount
 
-            # Get current URLs from recipes and database
-            recipe_urls = {url for feed in get_recipes().values() for url in feed.urls}
-            existing_urls = await self.get_all_feed_ids()
+            # # Get current URLs from recipes and database
+            # recipe_urls = {url for feed in get_recipes().values() for url in feed.urls}
+            # existing_urls = await self.get_all_feed_ids()
 
-            # Find URLs to remove
-            urls_to_remove = existing_urls - recipe_urls
-            if urls_to_remove:
-                logger.info(f"Feeds to remove: {len(urls_to_remove)}")
+            # # Find URLs to remove
+            # urls_to_remove = existing_urls - recipe_urls
+            # if urls_to_remove:
+            #     logger.info(f"Feeds to remove: {len(urls_to_remove)}")
 
-                # Delete orphaned entries in batches
-                batch_size = 500  # SQLite has a limit on query parameters
-                for i in range(0, len(urls_to_remove), batch_size):
-                    url_batch = list(
-                        itertools.islice(urls_to_remove, i, i + batch_size)
-                    )
-                    placeholders = ",".join("?" * len(url_batch))
-                    async with db.execute(
-                        f"DELETE FROM feeds WHERE id IN ({placeholders})",
-                        tuple(url_batch),
-                    ) as cursor:
-                        deleted += cursor.rowcount
+            #     # Delete orphaned entries in batches
+            #     batch_size = 500  # SQLite has a limit on query parameters
+            #     for i in range(0, len(urls_to_remove), batch_size):
+            #         url_batch = list(
+            #             itertools.islice(urls_to_remove, i, i + batch_size)
+            #         )
+            #         placeholders = ",".join("?" * len(url_batch))
+            #         async with db.execute(
+            #             f"DELETE FROM feeds WHERE id IN ({placeholders})",
+            #             tuple(url_batch),
+            #         ) as cursor:
+            #             deleted += cursor.rowcount
 
-            # Log new feeds that will be added
-            new_urls = recipe_urls - existing_urls
-            if new_urls:
-                logger.info(f"New feeds to add: {len(new_urls)}")
+            # # Log new feeds that will be added
+            # new_urls = recipe_urls - existing_urls
+            # if new_urls:
+            #     logger.info(f"New feeds to add: {len(new_urls)}")
 
             await db.commit()
-            logger.info(f"Cleaned up {deleted} entries (old or orphaned)")
+            logger.info(f"Cleaned up {deleted} entries (old)")
             return deleted
