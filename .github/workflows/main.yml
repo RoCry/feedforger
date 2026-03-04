@@ -32,8 +32,7 @@ jobs:
         python-version-file: "pyproject.toml"
     
     - name: Install dependencies
-      run: |
-        uv sync --all-extras --dev
+      run: uv sync --all-extras
 
     - name: Restore cache
       uses: actions/cache/restore@v4
@@ -49,7 +48,7 @@ jobs:
         echo "NOW=$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_ENV
 
     - name: Run feed forger
-      run: uv run main.py
+      run: uv run feedforger build
     
     - name: Save cache
       uses: actions/cache/save@v4
@@ -57,14 +56,16 @@ jobs:
         path: cache/
         key: feed-cache-${{ github.run_id }}
     
+    - name: Create Release Notes File
+      run: echo "Feeds Update ${{ env.NOW }}" > release_notes.md
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         name: "Feeds Update ${{ env.NOW }}"
         tag_name: latest
-        files: |
-          outputs/*
-          cache/feeds.sqlite
-        prerelease: false 
+        body_path: release_notes.md
+        files: outputs/*
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
