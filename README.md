@@ -1,7 +1,36 @@
 # FeedForger 🔨⚡
-_Formerly from [RoCry/feedcooker](https://github.com/RoCry/feedcooker)_
 
-[![GitHub Actions Status](https://img.shields.io/github/actions/workflow/status/RoCry/feedforger/main.yml?branch=deploy)](https://github.com/RoCry/feedforger/actions) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Automatically forge multiple RSS feeds into organized JSON groups using GitHub Actions.
+Forge multiple RSS/Atom feeds into organized JSON groups. Runs on GitHub Actions with scheduled updates and releases.
+
+## Quick Start
+
+1. Fork this repo
+2. Edit `recipes/recipes.toml` with your feeds (supports `.toml` and `.opml`)
+3. Enable GitHub Actions — uncomment the `schedule` trigger in `.github/workflows/main.yml`
+4. Feeds are published as GitHub Releases
+
+## Local Usage
+
+```bash
+uv sync --all-extras
+uv run feedforger build          # build feeds from recipes/
+uv run feedforger build --help   # see all options
+uv run feedforger cleanup        # clean old cache entries
+```
+
+## Recipe Format
+
+```toml
+[recipes.MyFeeds]
+urls = [
+    "https://example.com/feed.xml",
+    "https://example.com/rss",
+]
+# filters = [{ title = "pattern to exclude", invert = true }]
+# fulfill = true  # fetch full article content
+```
+
+Also supports OPML files — just drop `.opml` files into the `recipes/` directory.
 

@@ -1,0 +1,11 @@
+# FeedForger Recipes
+# Each [recipes.NAME] section defines a feed group.
+# Add your feed URLs below, then run: feedforger build
+
+[recipes.Example]
+urls = [
+    "https://hnrss.org/frontpage",
+    "https://lobste.rs/rss",
+]
+# filters = [{ title = "pattern to exclude", invert = true }]
+# fulfill = false  # set true to fetch full article content

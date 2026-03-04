@@ -1,18 +1,20 @@
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pydantic import BaseModel, Field, HttpUrl
 
 
 class Author(BaseModel):
     name: str
-    url: Optional[HttpUrl] = None
-    avatar: Optional[HttpUrl] = None
+    url: HttpUrl | None = None
+    avatar: HttpUrl | None = None
 
     @classmethod
     def from_feed_data(
-        cls, author_data: Any, feed_data: dict = None
-    ) -> Optional["Author"]:
+        cls, author_data: Any, feed_data: dict | None = None
+    ) -> Author | None:
         """Create an Author instance from feed data."""
         if not author_data and feed_data:
             author_data = feed_data.get("author")
@@ -32,21 +34,21 @@ class FeedItem(BaseModel):
     id: str
     url: HttpUrl
     title: str
-    content_text: Optional[str] = None
-    content_html: Optional[str] = None
-    summary: Optional[str] = None
+    content_text: str | None = None
+    content_html: str | None = None
+    summary: str | None = None
     date_published: datetime
-    author: Optional[Author] = None
-    tags: List[str] = Field(default_factory=list)
-    language: Optional[str] = None
-    image: Optional[HttpUrl] = None  # Main image URL
-    banner_image: Optional[HttpUrl] = None  # Banner image URL
-    external_url: Optional[HttpUrl] = None  # For linkblog-style entries
+    author: Author | None = None
+    tags: list[str] = Field(default_factory=list)
+    language: str | None = None
+    image: HttpUrl | None = None  # Main image URL
+    banner_image: HttpUrl | None = None  # Banner image URL
+    external_url: HttpUrl | None = None  # For linkblog-style entries
 
     @staticmethod
     def _extract_content(
         entry: dict,
-    ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    ) -> tuple[str | None, str | None, str | None]:
         """Extract content_html, content_text and summary from a feed entry."""
         content_html = None
         content_text = None
@@ -70,7 +72,7 @@ class FeedItem(BaseModel):
         return content_html, content_text, summary
 
     @staticmethod
-    def _extract_image(entry: dict) -> Optional[str]:
+    def _extract_image(entry: dict) -> str | None:
         """Extract image URL from a feed entry."""
         if media_content := entry.get("media_content", []):
             for media in media_content:
@@ -83,10 +85,11 @@ class FeedItem(BaseModel):
         return None
 
     @staticmethod
-    def _extract_tags(entry: dict) -> List[str]:
+    def _extract_tags(entry: dict) -> list[str]:
         """Extract tags from a feed entry."""
         if entry.get("tags"):
-            return [tag.get("term", "") for tag in entry.get("tags")]
+            tags = [tag.get("term", "").strip() for tag in entry.get("tags")]
+            return [t for t in tags if t]
         elif entry.get("categories"):
             return entry.get("categories")
         return []
@@ -97,8 +100,8 @@ class FeedItem(BaseModel):
         entry: dict,
         feed_data: dict,
         published: datetime,
-        feed_language: Optional[str] = None,
-    ) -> "FeedItem":
+        feed_language: str | None = None,
+    ) -> FeedItem:
         """Create a FeedItem from a feedparser entry."""
         # Extract all entry components
         author = Author.from_feed_data(entry.get("author"), feed_data)
@@ -107,7 +110,7 @@ class FeedItem(BaseModel):
         tags = cls._extract_tags(entry)
 
         return cls(
-            id=entry.link,
+            id=entry.get("id") or entry.link,
             url=entry.link,
             title=entry.title,
             content_text=content_text,
@@ -125,23 +128,23 @@ class FeedItem(BaseModel):
 class Feed(BaseModel):
     version: str = "https://jsonfeed.org/version/1.1"
     title: str
-    description: Optional[str] = None
-    home_page_url: Optional[HttpUrl] = None
-    feed_url: Optional[HttpUrl] = None
-    items: List[FeedItem]
-    icon: Optional[HttpUrl] = None  # Feed icon (large, e.g. 512x512)
-    favicon: Optional[HttpUrl] = None  # Small icon (e.g. 64x64)
-    authors: Optional[List[Author]] = None
-    language: Optional[str] = None
-    user_comment: Optional[str] = None
+    description: str | None = None
+    home_page_url: HttpUrl | None = None
+    feed_url: HttpUrl | None = None
+    items: list[FeedItem]
+    icon: HttpUrl | None = None  # Feed icon (large, e.g. 512x512)
+    favicon: HttpUrl | None = None  # Small icon (e.g. 64x64)
+    authors: list[Author] | None = None
+    language: str | None = None
+    user_comment: str | None = None
 
     @classmethod
     def create_from_items(
         cls,
         feed_name: str,
-        items: List[FeedItem],
+        items: list[FeedItem],
         base_url: str = "https://github.com/RoCry/feedforger/releases",
-    ) -> "Feed":
+    ) -> Feed:
         """Create a Feed from a list of FeedItems."""
         import urllib.parse
 
@@ -155,7 +158,7 @@ class Feed(BaseModel):
             home_page_url=home_url,
             feed_url=feed_url,
             user_comment="Generated by FeedForger",
-            language="en",
+            language=None,
             authors=[],
             icon=None,
             favicon=None,
@@ -164,15 +167,15 @@ class Feed(BaseModel):
 
 class FeedFilter(BaseModel):
     # the pattern to match the title, optional for potential body filter
-    title: Optional[str] = None
+    title: str | None = None
     invert: bool = False  # whether to invert the match
 
 
 class FeedConfig(BaseModel):
-    urls: List[str]
-    filters: List[FeedFilter] = Field(default_factory=list)
+    urls: list[str]
+    filters: list[FeedFilter] = Field(default_factory=list)
     fulfill: bool = False  # whether to fetch content for each item
 
 
 class RecipeCollection(BaseModel):
-    recipes: Dict[str, FeedConfig]
+    recipes: dict[str, FeedConfig]

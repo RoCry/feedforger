@@ -1,9 +1,9 @@
 [project]
 name = "feedforger"
-version = "0.1.0"
-description = "RSS feed aggregator"
+version = "1.0.0"
+description = "RSS feed aggregator — forge multiple feeds into organized JSON groups"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "httpx",
     "feedparser",
@@ -11,7 +11,22 @@ dependencies = [
     "aiosqlite",
     "pydantic",
     "beautifulsoup4>=4.13.3",
+    "loguru",
+    "typer",
 ]
+
+[project.scripts]
+feedforger = "feedforger.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/feedforger"]
+
+[tool.ruff]
+target-version = "py313"
 
 [tool.ruff.lint]
 extend-select = ["I"]

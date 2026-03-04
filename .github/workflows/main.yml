@@ -1,12 +1,11 @@
 name: Feed Forger
 
 on:
-  schedule:
-    - cron: '45 * * * *' # every hour at 45 min
+  # Schedule only runs from the default branch.
+  # Forkers: uncomment and adjust the cron to enable scheduled builds.
+  # schedule:
+  #   - cron: '45 * * * *'
   workflow_dispatch:  # Allow manual trigger
-  push:
-    branches:
-      - deploy
 
 concurrency:
   group: ${{ github.workflow }}
@@ -17,20 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
     - uses: actions/checkout@v4
-      with:
-        ref: deploy
 
     - name: Install uv
       uses: astral-sh/setup-uv@v5
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version-file: "pyproject.toml"
-    
+
     - name: Install dependencies
       run: uv sync --all-extras
 
@@ -49,13 +46,13 @@ jobs:
 
     - name: Run feed forger
       run: uv run feedforger build
-    
+
     - name: Save cache
       uses: actions/cache/save@v4
       with:
         path: cache/
         key: feed-cache-${{ github.run_id }}
-    
+
     - name: Create Release Notes File
       run: echo "Feeds Update ${{ env.NOW }}" > release_notes.md
 
