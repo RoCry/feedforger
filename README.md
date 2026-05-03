@@ -18,6 +18,19 @@ uv sync --all-extras
 uv run feedforger build          # build feeds from recipes/
 uv run feedforger build --help   # see all options
 uv run feedforger cleanup        # clean old cache entries
+uv run feedforger report         # dump per-URL failure stats → cache/failure_report.json
+```
+
+## Pruning Dead URLs
+
+Each scheduled run uploads a `failure-report` artifact (30-day retention)
+with every URL's `continue_fail_count` and last error. Use it to find URLs
+that have been failing for many consecutive runs and remove them from
+`recipes/recipes.toml`:
+
+```bash
+gh run download -R <owner>/<repo> -n failure-report -D /tmp/ff
+jq '.entries | map(select(.continue_fail_count >= 30))' /tmp/ff/failure_report.json
 ```
 
 ## Recipe Format
