@@ -13,6 +13,11 @@ from feedforger.models import Feed, FeedConfig, FeedItem
 from feedforger.network import FeedFetcher
 from feedforger.recipes import load_recipes
 
+# Article HTML rarely changes — cache for 30 days. Source feeds keep the short default TTL.
+ARTICLE_CACHE_TTL = 60 * 60 * 24 * 30
+# Skip feeds that have failed this many times in a row (saves Actions minutes & log noise).
+MAX_CONSECUTIVE_FAILURES = 30
+
 
 async def _process_feed_entries(
     content: str, feed_config: FeedConfig, ignore_before: datetime
@@ -39,6 +44,9 @@ async def _process_feed_entries(
             continue
 
         item = FeedItem.from_feed_entry(entry, feed.feed, published, feed_language)
+        if item is None:
+            logger.warning(f"Skipping entry without title/link in feed: {entry!r:.120}")
+            continue
         items.append(item)
 
     return items
@@ -85,7 +93,7 @@ async def _fulfill_items_content(
     urls_to_fetch: list[str] = []
     for item in items_needing_content:
         url = str(item.url)
-        if cached_content := await db.get_content(url):
+        if cached_content := await db.get_content(url, ttl=ARTICLE_CACHE_TTL):
             try:
                 extracted = extract_main_content(cached_content, url)
                 _apply_extracted_content(item, extracted)
@@ -232,8 +240,26 @@ async def run_build(
     async with Database(db_path) as db, FeedFetcher() as fetcher:
         await db.cleanup()
 
+        skip_urls = await db.get_failed_feed_ids(MAX_CONSECUTIVE_FAILURES)
+        if skip_urls:
+            logger.info(
+                f"Skipping {len(skip_urls)} URLs with >={MAX_CONSECUTIVE_FAILURES} consecutive failures"
+            )
+
         for feed_name, feed_config in recipes.items():
-            items = await process_feeds(fetcher, db, feed_name, feed_config, since)
+            active_urls = [u for u in feed_config.urls if u not in skip_urls]
+            skipped = len(feed_config.urls) - len(active_urls)
+            if skipped:
+                logger.info(
+                    f"{feed_name}: skipping {skipped} persistently-failing URLs"
+                )
+            if not active_urls:
+                logger.warning(
+                    f"{feed_name}: all URLs are skipped, no items will be generated"
+                )
+                continue
+            effective_config = feed_config.model_copy(update={"urls": active_urls})
+            items = await process_feeds(fetcher, db, feed_name, effective_config, since)
 
             feed = Feed.create_from_items(feed_name, items)
             output_path = output_dir / f"{feed_name}.json"

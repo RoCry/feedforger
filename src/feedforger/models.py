@@ -20,8 +20,11 @@ class Author(BaseModel):
             author_data = feed_data.get("author")
 
         if isinstance(author_data, dict):
+            name = author_data.get("name")
+            if not name:
+                return None
             return cls(
-                name=author_data.get("name"),
+                name=name,
                 url=author_data.get("uri") or author_data.get("href"),
                 avatar=author_data.get("avatar"),
             )
@@ -101,18 +104,22 @@ class FeedItem(BaseModel):
         feed_data: dict,
         published: datetime,
         feed_language: str | None = None,
-    ) -> FeedItem:
-        """Create a FeedItem from a feedparser entry."""
-        # Extract all entry components
+    ) -> FeedItem | None:
+        """Create a FeedItem from a feedparser entry. Returns None if essential fields missing."""
+        link = entry.get("link")
+        title = entry.get("title")
+        if not link or not title:
+            return None
+
         author = Author.from_feed_data(entry.get("author"), feed_data)
         content_html, content_text, summary = cls._extract_content(entry)
         image = cls._extract_image(entry)
         tags = cls._extract_tags(entry)
 
         return cls(
-            id=entry.get("id") or entry.link,
-            url=entry.link,
-            title=entry.title,
+            id=entry.get("id") or link,
+            url=link,
+            title=title,
             content_text=content_text,
             content_html=content_html,
             summary=summary,
@@ -143,10 +150,21 @@ class Feed(BaseModel):
         cls,
         feed_name: str,
         items: list[FeedItem],
-        base_url: str = "https://github.com/RoCry/feedforger/releases",
+        base_url: str | None = None,
     ) -> Feed:
-        """Create a Feed from a list of FeedItems."""
+        """Create a Feed from a list of FeedItems.
+
+        base_url defaults to the GitHub releases URL of the current repository,
+        derived from FEEDFORGER_BASE_URL or GITHUB_REPOSITORY env vars.
+        """
+        import os
         import urllib.parse
+
+        if base_url is None:
+            base_url = os.environ.get("FEEDFORGER_BASE_URL")
+            if not base_url:
+                repo = os.environ.get("GITHUB_REPOSITORY", "RoCry/feedforger")
+                base_url = f"https://github.com/{repo}/releases"
 
         feed_url = f"{base_url}/download/latest/{urllib.parse.quote(feed_name)}.json"
         home_url = f"{base_url}/tag/latest"
