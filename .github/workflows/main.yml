@@ -47,6 +47,16 @@ jobs:
     - name: Run feed forger
       run: uv run feedforger build
 
+    - name: Generate failure report
+      run: uv run feedforger report --output cache/failure_report.json
+
+    - name: Upload failure report
+      uses: actions/upload-artifact@v4
+      with:
+        name: failure-report
+        path: cache/failure_report.json
+        retention-days: 30
+
     - name: Save cache
       uses: actions/cache/save@v4
       with:

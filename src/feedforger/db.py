@@ -137,6 +137,34 @@ class Database:
         ) as cursor:
             return {row[0] for row in await cursor.fetchall()}
 
+    async def get_failure_report(self) -> list[dict]:
+        """Return per-URL stats: fail count, last error, last update, has_content.
+
+        Used by `feedforger report` to identify URLs that have been broken for
+        a long time and are candidates for removal from recipes.
+        """
+        async with self.db.execute(
+            """
+            SELECT id, continue_fail_count, error_reason,
+                   updated_at, created_at,
+                   CASE WHEN content IS NOT NULL THEN 1 ELSE 0 END AS has_content
+            FROM feeds
+            ORDER BY continue_fail_count DESC, updated_at DESC
+            """
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [
+            {
+                "url": r[0],
+                "continue_fail_count": r[1],
+                "error_reason": r[2],
+                "updated_at": r[3],
+                "created_at": r[4],
+                "has_content": bool(r[5]),
+            }
+            for r in rows
+        ]
+
     async def cleanup(self, days: int = 7) -> int:
         """Delete entries older than specified days."""
         cutoff = int((datetime.now(UTC) - timedelta(days=days)).timestamp())
