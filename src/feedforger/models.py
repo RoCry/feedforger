@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+
+from feedforger.content import clean_html, first_image_in_html, html_to_summary
 
 
 class Author(BaseModel):
@@ -33,7 +35,22 @@ class Author(BaseModel):
         return None
 
 
+class Source(BaseModel):
+    """JSON Feed `_source` extension: where this item originally came from.
+
+    Critical when one aggregated feed merges many source blogs — without it,
+    readers can't tell which blog a post belongs to.
+    """
+
+    title: str | None = None
+    url: HttpUrl | None = None  # the source feed URL
+    home_page_url: HttpUrl | None = None  # the source site URL
+
+
 class FeedItem(BaseModel):
+    # Allow `_source` (JSONFeed extension) by populating via alias.
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     url: HttpUrl
     title: str
@@ -47,43 +64,92 @@ class FeedItem(BaseModel):
     image: HttpUrl | None = None  # Main image URL
     banner_image: HttpUrl | None = None  # Banner image URL
     external_url: HttpUrl | None = None  # For linkblog-style entries
+    source: Source | None = Field(
+        default=None,
+        alias="_source",
+        serialization_alias="_source",
+    )
 
     @staticmethod
     def _extract_content(
         entry: dict,
     ) -> tuple[str | None, str | None, str | None]:
-        """Extract content_html, content_text and summary from a feed entry."""
-        content_html = None
-        content_text = None
-        summary = None
+        """Extract content_html, content_text and summary from a feed entry.
+
+        Returns (content_html, content_text, summary). Summary is preserved as
+        a short plain-text excerpt independent of content for nicer reader UX.
+        """
+        content_html: str | None = None
+        content_text: str | None = None
 
         if entry.get("content"):
-            content = entry.get("content")[0]
+            content = entry["content"][0]
+            value = content.get("value")
             if content.get("type") == "text/html":
-                content_html = content.get("value")
+                content_html = value
             else:
-                content_text = content.get("value")
-            summary = content.get("summary")
+                content_text = value
         else:
-            summary = entry.get("summary")
-            if summary and summary.startswith("<"):
-                content_html = summary
-            else:
-                content_text = summary
-            summary = None  # prefer put summary in content
+            raw_summary = entry.get("summary")
+            if raw_summary:
+                if raw_summary.lstrip().startswith("<"):
+                    content_html = raw_summary
+                else:
+                    content_text = raw_summary
+
+        # Independent short summary: prefer feed-supplied summary, else derive
+        # from content. Always plain-text-ish, capped, no leading repetition of
+        # the title's HTML.
+        raw_summary = entry.get("summary") or ""
+        summary: str | None = None
+        if raw_summary and not raw_summary.lstrip().startswith("<"):
+            summary = raw_summary.strip()
+        elif content_html:
+            summary = html_to_summary(content_html)
+        elif content_text:
+            summary = content_text.strip()
+
+        if summary and len(summary) > 320:
+            summary = summary[:319].rstrip() + "…"
+
+        # Drop summary if it's just a duplicate of (the start of) content_text.
+        if summary and content_text and content_text.strip().startswith(summary):
+            summary = None
+
+        if content_html:
+            content_html = clean_html(content_html)
 
         return content_html, content_text, summary
 
     @staticmethod
-    def _extract_image(entry: dict) -> str | None:
-        """Extract image URL from a feed entry."""
-        if media_content := entry.get("media_content", []):
-            for media in media_content:
-                if media.get("medium") == "image":
-                    return media.get("url")
+    def _extract_image(entry: dict, content_html: str | None) -> str | None:
+        """Extract a single representative image URL from a feed entry."""
+        # 1. media:content medium=image
+        for media in entry.get("media_content", []) or []:
+            if media.get("medium") == "image" and media.get("url"):
+                return media["url"]
 
-        if entry.get("image"):
-            return entry.get("image").get("href")
+        # 2. media:thumbnail
+        for thumb in entry.get("media_thumbnail", []) or []:
+            if thumb.get("url"):
+                return thumb["url"]
+
+        # 3. atom <image>
+        if image := entry.get("image"):
+            href = image.get("href") if isinstance(image, dict) else None
+            if href:
+                return href
+
+        # 4. RSS enclosure with image type
+        for enc in entry.get("enclosures", []) or []:
+            etype = (enc.get("type") or "").lower()
+            href = enc.get("href") or enc.get("url")
+            if href and etype.startswith("image/"):
+                return href
+
+        # 5. First <img> in content_html as last resort
+        if content_html:
+            return first_image_in_html(content_html)
 
         return None
 
@@ -97,6 +163,17 @@ class FeedItem(BaseModel):
             return entry.get("categories")
         return []
 
+    @staticmethod
+    def _extract_source(feed_data: dict, source_url: str | None) -> Source | None:
+        """Build the `_source` block from feedparser's parsed feed metadata."""
+        if not feed_data and not source_url:
+            return None
+        title = (feed_data.get("title") or "").strip() or None
+        home = feed_data.get("link") or None
+        if not title and not home and not source_url:
+            return None
+        return Source(title=title, url=source_url, home_page_url=home)
+
     @classmethod
     def from_feed_entry(
         cls,
@@ -104,6 +181,7 @@ class FeedItem(BaseModel):
         feed_data: dict,
         published: datetime,
         feed_language: str | None = None,
+        source_url: str | None = None,
     ) -> FeedItem | None:
         """Create a FeedItem from a feedparser entry. Returns None if essential fields missing."""
         link = entry.get("link")
@@ -113,8 +191,9 @@ class FeedItem(BaseModel):
 
         author = Author.from_feed_data(entry.get("author"), feed_data)
         content_html, content_text, summary = cls._extract_content(entry)
-        image = cls._extract_image(entry)
+        image = cls._extract_image(entry, content_html)
         tags = cls._extract_tags(entry)
+        source = cls._extract_source(feed_data, source_url)
 
         return cls(
             id=entry.get("id") or link,
@@ -129,6 +208,7 @@ class FeedItem(BaseModel):
             language=feed_language or None,
             image=image,
             external_url=entry.get("source", {}).get("href"),
+            source=source,
         )
 
 

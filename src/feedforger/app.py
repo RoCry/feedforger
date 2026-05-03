@@ -20,7 +20,10 @@ MAX_CONSECUTIVE_FAILURES = 30
 
 
 async def _process_feed_entries(
-    content: str, feed_config: FeedConfig, ignore_before: datetime
+    content: str,
+    feed_config: FeedConfig,
+    ignore_before: datetime,
+    source_url: str | None = None,
 ) -> list[FeedItem]:
     items = []
     feed = feedparser.parse(content)
@@ -43,7 +46,9 @@ async def _process_feed_entries(
         if not should_include_item(entry, feed_config.filters):
             continue
 
-        item = FeedItem.from_feed_entry(entry, feed.feed, published, feed_language)
+        item = FeedItem.from_feed_entry(
+            entry, feed.feed, published, feed_language, source_url=source_url
+        )
         if item is None:
             logger.warning(f"Skipping entry without title/link in feed: {entry!r:.120}")
             continue
@@ -143,7 +148,7 @@ async def _process_cached_feeds(
         if cached := cached_map.get(url):
             try:
                 feed_items = await _process_feed_entries(
-                    cached, feed_config, ignore_before
+                    cached, feed_config, ignore_before, source_url=url
                 )
                 items.extend(feed_items)
             except Exception as e:
@@ -186,7 +191,7 @@ async def _process_uncached_feeds(
 
         try:
             feed_items = await _process_feed_entries(
-                content, feed_config, ignore_before
+                content, feed_config, ignore_before, source_url=url
             )
             items.extend(feed_items)
             logger.info(
@@ -263,6 +268,8 @@ async def run_build(
 
             feed = Feed.create_from_items(feed_name, items)
             output_path = output_dir / f"{feed_name}.json"
-            output_path.write_text(feed.model_dump_json(indent=2, exclude_none=True))
+            output_path.write_text(
+                feed.model_dump_json(indent=2, exclude_none=True, by_alias=True)
+            )
 
             logger.info(f"{feed_name}: generated {output_path}, {len(items)} items")
