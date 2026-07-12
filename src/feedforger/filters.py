@@ -11,8 +11,6 @@ def should_include_item(entry: dict[str, Any], filters: list[FeedFilter]) -> boo
         return True
 
     for f in filters:
-        if not f.title:
-            continue
         title = entry.get("title", "")
         if not title:
             continue

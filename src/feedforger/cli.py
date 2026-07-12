@@ -55,7 +55,6 @@ def report(
     so you can prune them from recipes.toml.
     """
     import json
-    from datetime import UTC, datetime
 
     from feedforger.db import Database
     from feedforger.log import setup_logging
@@ -63,20 +62,12 @@ def report(
     async def _run() -> None:
         setup_logging()
         async with Database(db_path) as db:
-            entries = await db.get_failure_report()
+            payload = await db.get_failure_report()
 
-        now_ts = int(datetime.now(UTC).timestamp())
-        payload = {
-            "generated_at": now_ts,
-            "generated_at_iso": datetime.fromtimestamp(now_ts, UTC).isoformat(),
-            "total": len(entries),
-            "failing": sum(1 for e in entries if e["continue_fail_count"] > 0),
-            "entries": entries,
-        }
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
         typer.echo(
-            f"Wrote {len(entries)} entries "
+            f"Wrote {len(payload['entries'])} entries "
             f"({payload['failing']} failing) → {output}"
         )
 

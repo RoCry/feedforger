@@ -47,8 +47,8 @@ def load_opml(path: Path) -> dict[str, FeedConfig]:
     for outline in body:
         group = outline.get("text") or outline.get("title") or default_group
         # If this outline itself is a feed (has xmlUrl), use default group
-        if outline.get("xmlUrl"):
-            feeds.setdefault(default_group, []).append(outline.get("xmlUrl"))
+        if xml_url := outline.get("xmlUrl"):
+            feeds.setdefault(default_group, []).append(xml_url)
         else:
             _collect_opml_feeds(outline, feeds, group)
 

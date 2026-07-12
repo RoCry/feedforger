@@ -2,10 +2,28 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TypedDict
 
 import aiosqlite
 
 from feedforger.log import logger
+
+
+class FailureReportEntry(TypedDict):
+    url: str
+    continue_fail_count: int
+    error_reason: str | None
+    updated_at: int
+    created_at: int
+    has_content: bool
+
+
+class FailureReport(TypedDict):
+    generated_at: int
+    generated_at_iso: str
+    total: int
+    failing: int
+    entries: list[FailureReportEntry]
 
 
 class Database:
@@ -125,11 +143,6 @@ class Database:
             )
         await self.db.commit()
 
-    async def get_all_feed_ids(self) -> set[str]:
-        """Get all feed IDs from database."""
-        async with self.db.execute("SELECT id FROM feeds") as cursor:
-            return {row[0] for row in await cursor.fetchall()}
-
     async def get_failed_feed_ids(self, min_fail_count: int = 30) -> set[str]:
         async with self.db.execute(
             "SELECT id FROM feeds WHERE continue_fail_count >= ?",
@@ -137,8 +150,8 @@ class Database:
         ) as cursor:
             return {row[0] for row in await cursor.fetchall()}
 
-    async def get_failure_report(self) -> list[dict]:
-        """Return per-URL stats: fail count, last error, last update, has_content.
+    async def get_failure_report(self) -> FailureReport:
+        """Return the finished per-URL failure report payload.
 
         Used by `feedforger report` to identify URLs that have been broken for
         a long time and are candidates for removal from recipes.
@@ -153,7 +166,7 @@ class Database:
             """
         ) as cursor:
             rows = await cursor.fetchall()
-        return [
+        entries: list[FailureReportEntry] = [
             {
                 "url": r[0],
                 "continue_fail_count": r[1],
@@ -164,6 +177,14 @@ class Database:
             }
             for r in rows
         ]
+        generated_at = int(datetime.now(UTC).timestamp())
+        return {
+            "generated_at": generated_at,
+            "generated_at_iso": datetime.fromtimestamp(generated_at, UTC).isoformat(),
+            "total": len(entries),
+            "failing": sum(1 for entry in entries if entry["continue_fail_count"] > 0),
+            "entries": entries,
+        }
 
     async def cleanup(self, days: int = 7) -> int:
         """Delete entries older than specified days."""
