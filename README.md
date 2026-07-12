@@ -8,7 +8,7 @@ Forge multiple RSS/Atom feeds into organized JSON groups. Runs on GitHub Actions
 
 1. Fork this repo
 2. Edit `recipes/recipes.toml` with your feeds (supports `.toml` and `.opml`)
-3. Enable GitHub Actions — uncomment the `schedule` trigger in `.github/workflows/main.yml`
+3. Enable GitHub Actions; the included schedule runs hourly at :45
 4. Feeds are published as GitHub Releases
 
 ## Local Usage
@@ -47,3 +47,18 @@ urls = [
 
 Also supports OPML files — just drop `.opml` files into the `recipes/` directory.
 
+## Branch Contract
+
+`master` is the reusable application and fork template. All code, documentation,
+and workflow changes land there.
+
+`deploy` is the default branch so GitHub runs its scheduled workflow. It contains
+exactly one commit on top of `master`, changing only `recipes/recipes.toml` with
+the personal subscriptions. The workflow stays byte-identical across both
+branches; its schedule is inert on non-default `master`.
+
+After pushing a code commit to `master`, refresh `deploy` with:
+
+```bash
+make sync-deploy
+```

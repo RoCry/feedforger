@@ -1,11 +1,12 @@
 name: Feed Forger
 
 on:
-  # Schedule only runs from the default branch.
-  # Forkers: uncomment and adjust the cron to enable scheduled builds.
-  # schedule:
-  #   - cron: '45 * * * *'
+  schedule:
+    - cron: '45 * * * *' # every hour at 45 min
   workflow_dispatch:  # Allow manual trigger
+  push:
+    branches:
+      - deploy
 
 concurrency:
   group: ${{ github.workflow }}
