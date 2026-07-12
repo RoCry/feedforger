@@ -141,7 +141,7 @@ async def process_feeds(
                 f"({processed}/{len(contents)})"
             )
         except Exception as error:
-            logger.error(f"{feed_name}: error processing {url}: {error}", exc_info=True)
+            raise RuntimeError(f"{feed_name}: failed to process {url}") from error
 
     if feed_config.fulfill and built_items:
         logger.info(f"{feed_name}: fulfilling Content for {len(built_items)} items")

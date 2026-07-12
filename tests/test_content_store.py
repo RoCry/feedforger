@@ -4,7 +4,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
+import pytest
 
+import feedforger.app as app_module
 from feedforger.app import process_feeds
 from feedforger.content_store import (
     InMemoryContentStore,
@@ -201,3 +203,28 @@ def test_process_feeds_uses_memory_store_for_feed_and_fulfillment() -> None:
         "Full HTML article.",
         "Full text article.",
     ]
+
+
+def test_process_feeds_propagates_parser_failure_with_source_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    feed_url = "https://fixture.example/broken.xml"
+    store = InMemoryContentStore(responses={feed_url: ["broken"]})
+
+    def fail_parser(content: str) -> None:
+        raise ValueError(f"cannot parse {content}")
+
+    monkeypatch.setattr(app_module.feedparser, "parse", fail_parser)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"Fixture: failed to process https://fixture\.example/broken\.xml",
+    ):
+        asyncio.run(
+            process_feeds(
+                store=store,
+                settings=Settings(),
+                feed_name="Fixture",
+                feed_config=FeedConfig(urls=[feed_url]),
+            )
+        )

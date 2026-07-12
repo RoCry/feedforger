@@ -68,26 +68,20 @@ def _truncate(text: str, max_length: int) -> str:
 def _html_to_summary(html: str) -> str | None:
     if not html:
         return None
-    try:
-        text = BeautifulSoup(html, "html.parser").get_text(separator=" ", strip=True)
-        text = _WS_RE.sub(" ", text).strip()
-        return _truncate(text, HTML_SUMMARY_MAX_LENGTH) if text else None
-    except Exception:
-        return None
+    text = BeautifulSoup(html, "html.parser").get_text(separator=" ", strip=True)
+    text = _WS_RE.sub(" ", text).strip()
+    return _truncate(text, HTML_SUMMARY_MAX_LENGTH) if text else None
 
 
 def _first_image_in_html(html: str) -> str | None:
     if not html:
         return None
-    try:
-        soup = BeautifulSoup(html, "html.parser")
-        if not (image := soup.find("img")):
-            return None
-        source = image.get("src") or image.get("data-src")
-        if isinstance(source, str) and source.startswith(("http://", "https://")):
-            return source
-    except Exception as error:
-        logger.warning(f"Image extraction failed: {error}")
+    soup = BeautifulSoup(html, "html.parser")
+    if not (image := soup.find("img")):
+        return None
+    source = image.get("src") or image.get("data-src")
+    if isinstance(source, str) and source.startswith(("http://", "https://")):
+        return source
     return None
 
 
@@ -262,8 +256,7 @@ def _extract_page_content(html: str, url: str) -> _PageContent:
             title=title,
         )
     except Exception as error:
-        logger.error(f"Error extracting content from {url}: {error}")
-        return _PageContent()
+        raise RuntimeError(f"Failed to extract Content from {url}") from error
 
 
 def build_item_content(

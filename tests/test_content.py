@@ -161,12 +161,33 @@ def test_sanitizer_failure_preserves_embedded_html(
             "title": "Sanitizer failure",
             "content": [{"type": "text/html", "value": raw_html}],
             "summary": "Fallback summary.",
+            "media_thumbnail": [{"url": "https://source.example/image.jpg"}],
         }
     )
 
     assert item is not None
     assert item.content_html == raw_html
     assert item.summary == "Fallback summary."
+
+
+def test_page_parser_failure_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail_parser(*args: object, **kwargs: object) -> None:
+        raise ValueError("parser unavailable")
+
+    monkeypatch.setattr(content_module, "BeautifulSoup", fail_parser)
+
+    with pytest.raises(
+        RuntimeError,
+        match="Failed to extract Content from https://source.example/items/parser-failure",
+    ):
+        build(
+            {
+                "link": "https://source.example/items/parser-failure",
+                "title": "Parser failure",
+                "summary": "Embedded summary.",
+            },
+            page_html="<article>Fetched content.</article>",
+        )
 
 
 @pytest.mark.parametrize(
