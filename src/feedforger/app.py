@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import feedparser
 
-from feedforger.content import ExtractedContent, extract_main_content, parse_date
+from feedforger.content import build_item_content, needs_fulfillment, parse_date
 from feedforger.db import Database
 from feedforger.filters import should_include_item
 from feedforger.log import logger, setup_logging
@@ -19,25 +22,55 @@ ARTICLE_CACHE_TTL = 60 * 60 * 24 * 30
 MAX_CONSECUTIVE_FAILURES = 30
 
 
+@dataclass(frozen=True, slots=True)
+class _ItemSource:
+    entry: Mapping[str, Any]
+    feed_meta: Mapping[str, Any]
+    published: datetime
+    feed_language: str | None
+    source_url: str | None
+
+
+@dataclass(slots=True)
+class _BuiltItem:
+    source: _ItemSource
+    item: FeedItem
+
+
+def _build_item(
+    source: _ItemSource,
+    page_html: str | None = None,
+) -> FeedItem | None:
+    return build_item_content(
+        entry=source.entry,
+        feed_meta=source.feed_meta,
+        published=source.published,
+        feed_language=source.feed_language,
+        source_url=source.source_url,
+        page_html=page_html,
+    )
+
+
 async def _process_feed_entries(
     content: str,
     feed_config: FeedConfig,
     ignore_before: datetime,
     source_url: str | None = None,
-) -> list[FeedItem]:
-    items = []
+) -> list[_BuiltItem]:
+    items: list[_BuiltItem] = []
     feed = feedparser.parse(content)
     feed_language = feed.feed.get("language", "").split("-")[0].lower()
 
     for entry in feed.entries:
         dt = entry.get("published", "") or entry.get("updated", "")
+        entry_url = entry.get("link") or entry.get("id") or "<unknown>"
         if not dt:
-            logger.warning(f"No date found for {entry.link}")
+            logger.warning(f"No date found for {entry_url}")
             continue
 
         published = parse_date(dt)
         if published is None:
-            logger.warning(f"Failed to parse date: '{dt}' for {entry.link}")
+            logger.warning(f"Failed to parse date: '{dt}' for {entry_url}")
             continue
 
         if published < ignore_before:
@@ -46,47 +79,32 @@ async def _process_feed_entries(
         if not should_include_item(entry, feed_config.filters):
             continue
 
-        item = FeedItem.from_feed_entry(
-            entry, feed.feed, published, feed_language, source_url=source_url
+        source = _ItemSource(
+            entry=entry,
+            feed_meta=feed.feed,
+            published=published,
+            feed_language=feed_language,
+            source_url=source_url,
         )
+        item = _build_item(source)
         if item is None:
             logger.warning(f"Skipping entry without title/link in feed: {entry!r:.120}")
             continue
-        items.append(item)
+        items.append(_BuiltItem(source=source, item=item))
 
     return items
 
 
-def _has_substantial_content(item: FeedItem) -> bool:
-    if item.content_html and len(item.content_html) > 700:
-        return True
-    if item.content_text and len(item.content_text) > 400:
-        return True
-    return False
-
-
-def _apply_extracted_content(item: FeedItem, extracted: ExtractedContent) -> None:
-    """Apply extracted content to a feed item."""
-    if extracted.content_html or extracted.content_text:
-        item.content_html = extracted.content_html or item.content_html
-        item.content_text = extracted.content_text or item.content_text
-        if (
-            extracted.title
-            and len(item.title) < 20
-            and len(extracted.title) > len(item.title)
-        ):
-            item.title = extracted.title
-
-
 async def _fulfill_items_content(
-    fetcher: FeedFetcher, db: Database, feed_name: str, items: list[FeedItem]
-) -> list[FeedItem]:
+    fetcher: FeedFetcher,
+    db: Database,
+    feed_name: str,
+    items: list[_BuiltItem],
+) -> list[_BuiltItem]:
     if not items:
         return items
 
-    items_needing_content = [
-        item for item in items if not _has_substantial_content(item)
-    ]
+    items_needing_content = [built for built in items if needs_fulfillment(built.item)]
     if not items_needing_content:
         logger.info(f"{feed_name}: All {len(items)} items have substantial content")
         return items
@@ -96,13 +114,13 @@ async def _fulfill_items_content(
     )
 
     urls_to_fetch: list[str] = []
-    for item in items_needing_content:
-        url = str(item.url)
+    for built in items_needing_content:
+        url = str(built.item.url)
         if cached_content := await db.get_content(url, ttl=ARTICLE_CACHE_TTL):
             try:
-                extracted = extract_main_content(cached_content, url)
-                _apply_extracted_content(item, extracted)
-                logger.debug(f"{feed_name}: Used cached content for {item.url}")
+                if rebuilt := _build_item(built.source, page_html=cached_content):
+                    built.item = rebuilt
+                logger.debug(f"{feed_name}: Used cached content for {built.item.url}")
             except Exception as e:
                 logger.error(f"{feed_name}: Error processing cached item {url}: {e}")
                 urls_to_fetch.append(url)
@@ -114,8 +132,11 @@ async def _fulfill_items_content(
         results = await fetcher.fetch_urls(feed_name, urls_to_fetch)
 
         for url, content, error in results:
-            item = next((i for i in items_needing_content if str(i.url) == url), None)
-            if not item:
+            built = next(
+                (item for item in items_needing_content if str(item.item.url) == url),
+                None,
+            )
+            if not built:
                 continue
 
             await db.set_content(
@@ -129,8 +150,8 @@ async def _fulfill_items_content(
                 continue
 
             try:
-                extracted = extract_main_content(content, url)
-                _apply_extracted_content(item, extracted)
+                if rebuilt := _build_item(built.source, page_html=content):
+                    built.item = rebuilt
             except Exception as e:
                 logger.error(f"{feed_name}: Error extracting content from {url}: {e}")
 
@@ -139,8 +160,8 @@ async def _fulfill_items_content(
 
 async def _process_cached_feeds(
     db: Database, feed_name: str, feed_config: FeedConfig, ignore_before: datetime
-) -> tuple[list[FeedItem], list[str]]:
-    items: list[FeedItem] = []
+) -> tuple[list[_BuiltItem], list[str]]:
+    items: list[_BuiltItem] = []
     cached_map = await db.batch_get_content(feed_config.urls)
     urls_to_fetch = []
 
@@ -173,8 +194,8 @@ async def _process_uncached_feeds(
     urls_to_fetch: list[str],
     feed_config: FeedConfig,
     ignore_before: datetime,
-) -> list[FeedItem]:
-    items: list[FeedItem] = []
+) -> list[_BuiltItem]:
+    items: list[_BuiltItem] = []
     if not urls_to_fetch:
         return items
 
@@ -226,7 +247,7 @@ async def process_feeds(
         logger.info(f"{feed_name}: fulfilling content for {len(all_items)} items")
         all_items = await _fulfill_items_content(fetcher, db, feed_name, all_items)
 
-    return all_items
+    return [built.item for built in all_items]
 
 
 async def run_build(

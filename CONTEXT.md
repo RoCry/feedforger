@@ -17,6 +17,11 @@ _Avoid_: Channel, category
 A dated article or update emitted by a source feed and normalized for publication.
 _Avoid_: Entry, post
 
+**Content**:
+The normalized body, summary, image, authorship, tags, and source attribution
+carried by an item, chosen from embedded feed material and fulfilled page material.
+_Avoid_: Payload, extracted content
+
 **Fulfill**:
 Enrich an item that lacks substantial embedded content with content from its
 original page.
