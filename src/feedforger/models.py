@@ -1,8 +1,26 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+
+
+class FailureReportEntry(TypedDict):
+    url: str
+    continue_fail_count: int
+    error_reason: str | None
+    updated_at: int
+    created_at: int
+    has_content: bool
+
+
+class FailureReport(TypedDict):
+    generated_at: int
+    generated_at_iso: str
+    total: int
+    failing: int
+    entries: list[FailureReportEntry]
 
 
 class Author(BaseModel):

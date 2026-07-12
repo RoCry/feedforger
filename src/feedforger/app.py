@@ -167,8 +167,20 @@ async def run_build(
 
     recipes = load_recipes(recipes_path)
     logger.info(f"Loaded {len(recipes)} recipes from {recipes_path}")
+    failing_urls = await store.persistently_failing_urls()
     for feed_name, feed_config in recipes.items():
-        items = await process_feeds(store, feed_name, feed_config, since)
+        active_urls = [url for url in feed_config.urls if url not in failing_urls]
+        skipped = len(feed_config.urls) - len(active_urls)
+        if skipped:
+            logger.info(f"{feed_name}: skipping {skipped} persistently failing URLs")
+        if not active_urls:
+            logger.warning(
+                f"{feed_name}: all URLs are persistently failing; preserving prior output"
+            )
+            continue
+
+        active_config = feed_config.model_copy(update={"urls": active_urls})
+        items = await process_feeds(store, feed_name, active_config, since)
         feed = Feed.create_from_items(feed_name, items)
         output_path = output_dir / f"{feed_name}.json"
         output_path.write_text(

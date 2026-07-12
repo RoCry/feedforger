@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from feedforger.app import run_build
-from feedforger.content_store import InMemoryContentStore
+from feedforger.content_store import FEED_TTL, InMemoryContentStore
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -84,3 +84,28 @@ def test_build_fixture_output_is_byte_identical(
 
     output = tmp_path / "outputs" / "Fixture.json"
     assert output.read_bytes() == EXPECTED_OUTPUT.encode()
+
+
+def test_build_preserves_previous_output_when_all_sources_persistently_fail(
+    tmp_path: Path,
+) -> None:
+    feed_url = "https://fixture.example/broken.xml"
+    store = InMemoryContentStore(responses={feed_url: [None] * 30})
+    recipes_path = tmp_path / "recipes.toml"
+    recipes_path.write_text(
+        '[recipes.Blocked]\nurls = ["https://fixture.example/broken.xml"]\n'
+    )
+
+    async def build_fixture() -> None:
+        for _ in range(30):
+            assert await store.get(feed_url, ttl=FEED_TTL) is None
+        await run_build(
+            store=store,
+            recipes_path=recipes_path,
+            output_dir=tmp_path / "outputs",
+            since=timedelta(days=7),
+        )
+
+    asyncio.run(build_fixture())
+
+    assert not (tmp_path / "outputs" / "Blocked.json").exists()

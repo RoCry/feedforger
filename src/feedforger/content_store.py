@@ -6,12 +6,13 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol, TypedDict
+from typing import Protocol
 
 import aiosqlite
 import httpx
 
 from feedforger.log import logger
+from feedforger.models import FailureReport, FailureReportEntry
 
 FEED_TTL = timedelta(minutes=30)
 ARTICLE_TTL = timedelta(days=30)
@@ -26,27 +27,11 @@ _USER_AGENT = "FeedForger/1.0 (+https://github.com/RoCry/feedforger)"
 Clock = Callable[[], datetime]
 
 
-class FailureReportEntry(TypedDict):
-    url: str
-    continue_fail_count: int
-    error_reason: str | None
-    updated_at: int
-    created_at: int
-    has_content: bool
-
-
-class FailureReport(TypedDict):
-    generated_at: int
-    generated_at_iso: str
-    total: int
-    failing: int
-    entries: list[FailureReportEntry]
-
-
 class ContentStore(Protocol):
     async def get(self, url: str, *, ttl: timedelta) -> str | None: ...
     async def cleanup(self, *, retention: timedelta) -> int: ...
     async def failure_report(self) -> FailureReport: ...
+    async def persistently_failing_urls(self) -> set[str]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +148,13 @@ class _FetchThroughCache:
             "entries": entries,
         }
 
+    async def persistently_failing_urls(self) -> set[str]:
+        return {
+            entry["url"]
+            for entry in await self._records.failure_entries()
+            if entry["continue_fail_count"] >= MAX_CONSECUTIVE_FAILURES
+        }
+
 
 class _MemoryRecords:
     def __init__(self) -> None:
@@ -270,6 +262,9 @@ class InMemoryContentStore:
 
     async def failure_report(self) -> FailureReport:
         return await self._engine.failure_report()
+
+    async def persistently_failing_urls(self) -> set[str]:
+        return await self._engine.persistently_failing_urls()
 
 
 class _SQLiteRecords:
@@ -497,3 +492,6 @@ class SQLiteHttpContentStore:
 
     async def failure_report(self) -> FailureReport:
         return await self._engine.failure_report()
+
+    async def persistently_failing_urls(self) -> set[str]:
+        return await self._engine.persistently_failing_urls()
