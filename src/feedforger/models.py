@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import urllib.parse
 from datetime import datetime
 from typing import TypedDict
 
@@ -79,22 +80,9 @@ class Feed(BaseModel):
         cls,
         feed_name: str,
         items: list[FeedItem],
-        base_url: str | None = None,
+        base_url: str,
     ) -> Feed:
-        """Create a Feed from a list of FeedItems.
-
-        base_url defaults to the GitHub releases URL of the current repository,
-        derived from FEEDFORGER_BASE_URL or GITHUB_REPOSITORY env vars.
-        """
-        import os
-        import urllib.parse
-
-        if base_url is None:
-            base_url = os.environ.get("FEEDFORGER_BASE_URL")
-            if not base_url:
-                repo = os.environ.get("GITHUB_REPOSITORY", "RoCry/feedforger")
-                base_url = f"https://github.com/{repo}/releases"
-
+        """Create a Feed from items using an explicit release base URL."""
         feed_url = f"{base_url}/download/latest/{urllib.parse.quote(feed_name)}.json"
         home_url = f"{base_url}/tag/latest"
 

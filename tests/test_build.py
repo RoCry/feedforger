@@ -2,10 +2,9 @@ import asyncio
 from datetime import timedelta
 from pathlib import Path
 
-import pytest
-
 from feedforger.app import run_build
-from feedforger.content_store import FEED_TTL, InMemoryContentStore
+from feedforger.content_store import InMemoryContentStore
+from feedforger.settings import Settings
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -57,12 +56,7 @@ EXPECTED_OUTPUT = """{
 }"""
 
 
-def test_build_fixture_output_is_byte_identical(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("FEEDFORGER_BASE_URL", raising=False)
-    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+def test_build_fixture_output_is_byte_identical(tmp_path: Path) -> None:
     feed_url = "https://fixture.example/feed.xml"
     recipes_path = tmp_path / "recipes.toml"
     recipes_path.write_text(
@@ -71,14 +65,14 @@ def test_build_fixture_output_is_byte_identical(
     store = InMemoryContentStore(
         responses={feed_url: [(FIXTURES_DIR / "characterization_feed.xml").read_text()]}
     )
+    settings = Settings(
+        recipes_path=recipes_path,
+        output_dir=tmp_path / "outputs",
+        since=timedelta(days=36500),
+    )
 
     async def build_fixture() -> None:
-        await run_build(
-            store=store,
-            recipes_path=recipes_path,
-            output_dir=tmp_path / "outputs",
-            since=timedelta(days=36500),
-        )
+        await run_build(store=store, settings=settings)
 
     asyncio.run(build_fixture())
 
@@ -95,16 +89,15 @@ def test_build_preserves_previous_output_when_all_sources_persistently_fail(
     recipes_path.write_text(
         '[recipes.Blocked]\nurls = ["https://fixture.example/broken.xml"]\n'
     )
+    settings = Settings(
+        recipes_path=recipes_path,
+        output_dir=tmp_path / "outputs",
+    )
 
     async def build_fixture() -> None:
         for _ in range(30):
-            assert await store.get(feed_url, ttl=FEED_TTL) is None
-        await run_build(
-            store=store,
-            recipes_path=recipes_path,
-            output_dir=tmp_path / "outputs",
-            since=timedelta(days=7),
-        )
+            assert await store.get(feed_url, ttl=settings.feed_ttl) is None
+        await run_build(store=store, settings=settings)
 
     asyncio.run(build_fixture())
 

@@ -3,23 +3,18 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any
 
 import feedparser
 
 from feedforger.content import build_item_content, needs_fulfillment, parse_date
-from feedforger.content_store import (
-    ARTICLE_TTL,
-    CLEANUP_RETENTION,
-    FEED_TTL,
-    ContentStore,
-)
+from feedforger.content_store import ContentStore
 from feedforger.filters import should_include_item
 from feedforger.log import logger, setup_logging
 from feedforger.models import Feed, FeedConfig, FeedItem
 from feedforger.recipes import load_recipes
+from feedforger.settings import Settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +90,7 @@ def _process_feed_entries(
 
 async def _fulfill_items_content(
     store: ContentStore,
+    settings: Settings,
     feed_name: str,
     items: list[_BuiltItem],
 ) -> None:
@@ -105,7 +101,7 @@ async def _fulfill_items_content(
 
     logger.info(f"{feed_name}: {len(pending)}/{len(items)} items need Content")
     pages = await asyncio.gather(
-        *(store.get(str(built.item.url), ttl=ARTICLE_TTL) for built in pending)
+        *(store.get(str(built.item.url), ttl=settings.article_ttl) for built in pending)
     )
     for built, page_html in zip(pending, pages, strict=True):
         if page_html and (rebuilt := _build_item(built.source, page_html=page_html)):
@@ -114,15 +110,15 @@ async def _fulfill_items_content(
 
 async def process_feeds(
     store: ContentStore,
+    settings: Settings,
     feed_name: str,
     feed_config: FeedConfig,
-    since: timedelta,
 ) -> list[FeedItem]:
-    ignore_before = datetime.now(UTC) - since
+    ignore_before = datetime.now(UTC) - settings.since
     logger.info(f"{feed_name}: processing {len(feed_config.urls)} feeds")
 
     contents = await asyncio.gather(
-        *(store.get(url, ttl=FEED_TTL) for url in feed_config.urls)
+        *(store.get(url, ttl=settings.feed_ttl) for url in feed_config.urls)
     )
     built_items: list[_BuiltItem] = []
     for processed, (url, content) in enumerate(
@@ -149,24 +145,22 @@ async def process_feeds(
 
     if feed_config.fulfill and built_items:
         logger.info(f"{feed_name}: fulfilling Content for {len(built_items)} items")
-        await _fulfill_items_content(store, feed_name, built_items)
+        await _fulfill_items_content(store, settings, feed_name, built_items)
 
     return [built.item for built in built_items]
 
 
 async def run_build(
     store: ContentStore,
-    recipes_path: Path,
-    output_dir: Path,
-    since: timedelta = timedelta(days=7),
+    settings: Settings,
 ) -> None:
     setup_logging()
     logger.info("Starting feed forging")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    await store.cleanup(retention=CLEANUP_RETENTION)
+    settings.output_dir.mkdir(parents=True, exist_ok=True)
+    await store.cleanup(retention=settings.cleanup_retention)
 
-    recipes = load_recipes(recipes_path)
-    logger.info(f"Loaded {len(recipes)} recipes from {recipes_path}")
+    recipes = load_recipes(settings.recipes_path)
+    logger.info(f"Loaded {len(recipes)} recipes from {settings.recipes_path}")
     failing_urls = await store.persistently_failing_urls()
     for feed_name, feed_config in recipes.items():
         active_urls = [url for url in feed_config.urls if url not in failing_urls]
@@ -180,9 +174,13 @@ async def run_build(
             continue
 
         active_config = feed_config.model_copy(update={"urls": active_urls})
-        items = await process_feeds(store, feed_name, active_config, since)
-        feed = Feed.create_from_items(feed_name, items)
-        output_path = output_dir / f"{feed_name}.json"
+        items = await process_feeds(store, settings, feed_name, active_config)
+        feed = Feed.create_from_items(
+            feed_name,
+            items,
+            base_url=settings.base_url,
+        )
+        output_path = settings.output_dir / f"{feed_name}.json"
         output_path.write_text(
             feed.model_dump_json(indent=2, exclude_none=True, by_alias=True)
         )

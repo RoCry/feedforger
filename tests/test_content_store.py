@@ -7,12 +7,11 @@ import httpx
 
 from feedforger.app import process_feeds
 from feedforger.content_store import (
-    FEED_TTL,
-    FailureReport,
     InMemoryContentStore,
     SQLiteHttpContentStore,
 )
-from feedforger.models import FeedConfig
+from feedforger.models import FailureReport, FeedConfig
+from feedforger.settings import Settings
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -30,6 +29,7 @@ class FakeClock:
 
 def test_memory_store_refreshes_content_at_exact_ttl_boundary() -> None:
     clock = FakeClock(datetime(2026, 7, 12, tzinfo=UTC))
+    settings = Settings()
     store = InMemoryContentStore(
         responses={"https://example.com/feed": ["first", "second"]},
         now=clock,
@@ -37,17 +37,17 @@ def test_memory_store_refreshes_content_at_exact_ttl_boundary() -> None:
 
     async def scenario() -> None:
         assert (
-            await store.get("https://example.com/feed", ttl=timedelta(minutes=30))
+            await store.get("https://example.com/feed", ttl=settings.feed_ttl)
             == "first"
         )
         clock.advance(timedelta(minutes=29, seconds=59))
         assert (
-            await store.get("https://example.com/feed", ttl=timedelta(minutes=30))
+            await store.get("https://example.com/feed", ttl=settings.feed_ttl)
             == "first"
         )
         clock.advance(timedelta(seconds=1))
         assert (
-            await store.get("https://example.com/feed", ttl=timedelta(minutes=30))
+            await store.get("https://example.com/feed", ttl=settings.feed_ttl)
             == "second"
         )
 
@@ -56,6 +56,7 @@ def test_memory_store_refreshes_content_at_exact_ttl_boundary() -> None:
 
 def test_memory_store_skips_persistent_failures_until_cleanup() -> None:
     clock = FakeClock(datetime(2026, 7, 12, tzinfo=UTC))
+    settings = Settings()
     url = "https://example.com/broken"
     store = InMemoryContentStore(
         responses={url: [None] * 30 + ["recovered"]},
@@ -64,24 +65,25 @@ def test_memory_store_skips_persistent_failures_until_cleanup() -> None:
 
     async def scenario() -> None:
         for _ in range(30):
-            assert await store.get(url, ttl=FEED_TTL) is None
+            assert await store.get(url, ttl=settings.feed_ttl) is None
 
         report = await store.failure_report()
         assert report["entries"][0]["continue_fail_count"] == 30
         assert report["entries"][0]["error_reason"] == "unavailable"
 
-        assert await store.get(url, ttl=FEED_TTL) is None
+        assert await store.get(url, ttl=settings.feed_ttl) is None
         assert (await store.failure_report())["entries"][0]["continue_fail_count"] == 30
 
         clock.advance(timedelta(days=8))
-        assert await store.cleanup(retention=timedelta(days=7)) == 1
-        assert await store.get(url, ttl=FEED_TTL) == "recovered"
+        assert await store.cleanup(retention=settings.cleanup_retention) == 1
+        assert await store.get(url, ttl=settings.feed_ttl) == "recovered"
 
     asyncio.run(scenario())
 
 
 def test_memory_store_success_resets_failure_state() -> None:
     clock = FakeClock(datetime(2026, 7, 12, tzinfo=UTC))
+    settings = Settings()
     url = "https://example.com/flaky"
     store = InMemoryContentStore(
         responses={url: [None, "recovered"]},
@@ -89,8 +91,8 @@ def test_memory_store_success_resets_failure_state() -> None:
     )
 
     async def scenario() -> None:
-        assert await store.get(url, ttl=FEED_TTL) is None
-        assert await store.get(url, ttl=FEED_TTL) == "recovered"
+        assert await store.get(url, ttl=settings.feed_ttl) is None
+        assert await store.get(url, ttl=settings.feed_ttl) == "recovered"
         assert await store.failure_report() == {
             "generated_at": 1783814400,
             "generated_at_iso": "2026-07-12T00:00:00+00:00",
@@ -113,6 +115,7 @@ def test_memory_store_success_resets_failure_state() -> None:
 
 def test_sqlite_store_returns_finished_failure_report(tmp_path: Path) -> None:
     now = datetime(2026, 7, 12, 12, 30, tzinfo=UTC)
+    settings = Settings(db_path=tmp_path / "feeds.sqlite")
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "bad.example":
@@ -121,12 +124,15 @@ def test_sqlite_store_returns_finished_failure_report(tmp_path: Path) -> None:
 
     async def get_report() -> FailureReport:
         async with SQLiteHttpContentStore(
-            db_path=tmp_path / "feeds.sqlite",
+            db_path=settings.db_path,
+            max_concurrent=settings.max_concurrent,
+            timeout=settings.request_timeout,
+            retries=settings.request_retries,
             now=lambda: now,
             transport=httpx.MockTransport(handler),
         ) as store:
-            await store.get("https://ok.example/feed", ttl=FEED_TTL)
-            await store.get("https://bad.example/feed", ttl=FEED_TTL)
+            await store.get("https://ok.example/feed", ttl=settings.feed_ttl)
+            await store.get("https://bad.example/feed", ttl=settings.feed_ttl)
             return await store.failure_report()
 
     report = asyncio.run(get_report())
@@ -159,6 +165,7 @@ def test_sqlite_store_returns_finished_failure_report(tmp_path: Path) -> None:
 
 def test_process_feeds_uses_memory_store_for_feed_and_fulfillment() -> None:
     feed_url = "https://fixture.example/feed.xml"
+    settings = Settings(since=timedelta(days=36500))
     store = InMemoryContentStore(
         responses={
             feed_url: [(FIXTURES_DIR / "characterization_feed.xml").read_text()],
@@ -180,9 +187,9 @@ def test_process_feeds_uses_memory_store_for_feed_and_fulfillment() -> None:
     items = asyncio.run(
         process_feeds(
             store=store,
+            settings=settings,
             feed_name="Fixture",
             feed_config=FeedConfig(urls=[feed_url], fulfill=True),
-            since=timedelta(days=36500),
         )
     )
 

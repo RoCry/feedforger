@@ -14,14 +14,8 @@ import httpx
 from feedforger.log import logger
 from feedforger.models import FailureReport, FailureReportEntry
 
-FEED_TTL = timedelta(minutes=30)
-ARTICLE_TTL = timedelta(days=30)
-CLEANUP_RETENTION = timedelta(days=7)
 MAX_CONSECUTIVE_FAILURES = 30
 
-_DEFAULT_MAX_CONCURRENT = 5
-_DEFAULT_TIMEOUT = 15.0
-_DEFAULT_RETRIES = 2
 _USER_AGENT = "FeedForger/1.0 (+https://github.com/RoCry/feedforger)"
 
 Clock = Callable[[], datetime]
@@ -409,9 +403,9 @@ class _HttpOrigin:
     def __init__(
         self,
         *,
-        max_concurrent: int = _DEFAULT_MAX_CONCURRENT,
-        timeout: float = _DEFAULT_TIMEOUT,
-        retries: int = _DEFAULT_RETRIES,
+        max_concurrent: int,
+        timeout: float,
+        retries: int,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._client = httpx.AsyncClient(
@@ -463,11 +457,19 @@ class SQLiteHttpContentStore:
         self,
         db_path: str | Path,
         *,
+        max_concurrent: int,
+        timeout: float,
+        retries: int,
         now: Clock = _utc_now,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._records = _SQLiteRecords(db_path)
-        self._origin = _HttpOrigin(transport=transport)
+        self._origin = _HttpOrigin(
+            max_concurrent=max_concurrent,
+            timeout=timeout,
+            retries=retries,
+            transport=transport,
+        )
         self._engine = _FetchThroughCache(
             self._records,
             self._origin,
