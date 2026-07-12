@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from feedforger.app import run_build
-from feedforger.db import Database
+from feedforger.content_store import InMemoryContentStore
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -68,19 +68,16 @@ def test_build_fixture_output_is_byte_identical(
     recipes_path.write_text(
         '[recipes.Fixture]\nurls = ["https://fixture.example/feed.xml"]\n'
     )
-    db_path = tmp_path / "feeds.sqlite"
+    store = InMemoryContentStore(
+        responses={feed_url: [(FIXTURES_DIR / "characterization_feed.xml").read_text()]}
+    )
 
     async def build_fixture() -> None:
-        async with Database(db_path=db_path) as db:
-            await db.set_content(
-                url=feed_url,
-                content=(FIXTURES_DIR / "characterization_feed.xml").read_text(),
-            )
         await run_build(
+            store=store,
             recipes_path=recipes_path,
             output_dir=tmp_path / "outputs",
             since=timedelta(days=36500),
-            db_path=db_path,
         )
 
     asyncio.run(build_fixture())

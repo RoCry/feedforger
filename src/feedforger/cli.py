@@ -27,15 +27,18 @@ def build(
 ) -> None:
     """Build all feeds from recipes (supports .toml, .opml, and directories)."""
     from feedforger.app import run_build
+    from feedforger.content_store import SQLiteHttpContentStore
 
-    asyncio.run(
-        run_build(
-            recipes_path=recipes,
-            output_dir=output,
-            since=timedelta(days=since_days),
-            db_path=db_path,
-        )
-    )
+    async def _run() -> None:
+        async with SQLiteHttpContentStore(db_path=db_path) as store:
+            await run_build(
+                store=store,
+                recipes_path=recipes,
+                output_dir=output,
+                since=timedelta(days=since_days),
+            )
+
+    asyncio.run(_run())
 
 
 @app.command()
@@ -56,13 +59,13 @@ def report(
     """
     import json
 
-    from feedforger.db import Database
+    from feedforger.content_store import SQLiteHttpContentStore
     from feedforger.log import setup_logging
 
     async def _run() -> None:
         setup_logging()
-        async with Database(db_path) as db:
-            payload = await db.get_failure_report()
+        async with SQLiteHttpContentStore(db_path=db_path) as store:
+            payload = await store.failure_report()
 
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -83,13 +86,13 @@ def cleanup(
     ),
 ) -> None:
     """Clean up old database entries."""
-    from feedforger.db import Database
+    from feedforger.content_store import SQLiteHttpContentStore
     from feedforger.log import setup_logging
 
     async def _cleanup() -> None:
         setup_logging()
-        async with Database(db_path) as db:
-            deleted = await db.cleanup(days=days)
+        async with SQLiteHttpContentStore(db_path=db_path) as store:
+            deleted = await store.cleanup(retention=timedelta(days=days))
             typer.echo(f"Cleaned up {deleted} entries")
 
     asyncio.run(_cleanup())

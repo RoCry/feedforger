@@ -22,6 +22,11 @@ The normalized body, summary, image, authorship, tags, and source attribution
 carried by an item, chosen from embedded feed material and fulfilled page material.
 _Avoid_: Payload, extracted content
 
+**ContentStore**:
+The source of fresh feed and fulfillment Content, responsible for tracking when
+an origin repeatedly fails to provide it.
+_Avoid_: Cache, fetcher, database
+
 **Fulfill**:
 Enrich an item that lacks substantial embedded content with content from its
 original page.
