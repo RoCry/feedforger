@@ -8,7 +8,7 @@ Forge multiple RSS/Atom feeds into organized JSON groups. Runs on GitHub Actions
 
 1. Fork this repo
 2. Edit `recipes/recipes.toml` with your feeds (supports `.toml` and `.opml`)
-3. Enable GitHub Actions; the included schedule runs hourly at :45
+3. Enable GitHub Actions; the included schedule runs hourly at :15
 4. Feeds are published as GitHub Releases
 
 ## Local Usage
