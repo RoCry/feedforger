@@ -134,6 +134,7 @@ def _extract_embedded_content(entry: Mapping[str, Any]) -> _EmbeddedContent:
 def _extract_author(
     author_data: Any,
     feed_meta: Mapping[str, Any],
+    source_url: str | None,
 ) -> Author | None:
     if not author_data:
         author_data = feed_meta.get("author")
@@ -144,8 +145,10 @@ def _extract_author(
         return Author.model_validate(
             {
                 "name": name,
-                "url": author_data.get("uri") or author_data.get("href"),
-                "avatar": author_data.get("avatar"),
+                "url": _absolute_url(
+                    author_data.get("uri") or author_data.get("href"), source_url
+                ),
+                "avatar": _absolute_url(author_data.get("avatar"), source_url),
             }
         )
     if isinstance(author_data, str):
@@ -279,9 +282,9 @@ def build_item_content(
     page_html: str | None = None,
 ) -> FeedItem | None:
     """Build a finished item from feed data and optional fetched-page HTML."""
-    link = entry.get("link")
+    link = _absolute_url(entry.get("link"), source_url)
     title = entry.get("title")
-    if not isinstance(link, str) or not link or not isinstance(title, str) or not title:
+    if not link or not isinstance(title, str) or not title:
         return None
 
     embedded = _extract_embedded_content(entry)
@@ -307,11 +310,11 @@ def build_item_content(
             "content_html": content_html,
             "summary": embedded.summary,
             "date_published": published,
-            "author": _extract_author(entry.get("author"), feed_meta),
+            "author": _extract_author(entry.get("author"), feed_meta, source_url),
             "tags": _extract_tags(entry),
             "language": feed_language or None,
-            "image": _extract_image(entry, content_html),
-            "external_url": external_url,
+            "image": _absolute_url(_extract_image(entry, content_html), source_url),
+            "external_url": _absolute_url(external_url, source_url),
             "_source": _extract_source(feed_meta, source_url),
         }
     )

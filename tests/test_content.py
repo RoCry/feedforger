@@ -334,6 +334,42 @@ def test_relative_source_home_page_url_is_resolved_against_feed_url() -> None:
     assert str(item.source.home_page_url) == "https://dirkjan.ochtman.nl/writing/"
 
 
+def test_relative_item_url_is_resolved_against_feed_url() -> None:
+    item = build_item_content(
+        entry={
+            "id": "urn:item:relative-url",
+            "link": "/writing/2026/08/13/announcing-oxish.html",
+            "title": "Announcing Oxish",
+        },
+        feed_meta={"title": "Dirkjan's writing", "link": "/writing/"},
+        published=PUBLISHED,
+        source_url="https://dirkjan.ochtman.nl/writing/feeds/all.atom.xml",
+    )
+
+    assert item is not None
+    assert (
+        str(item.url)
+        == "https://dirkjan.ochtman.nl/writing/2026/08/13/announcing-oxish.html"
+    )
+    assert item.source is not None
+    assert str(item.source.home_page_url) == "https://dirkjan.ochtman.nl/writing/"
+
+
+def test_unresolvable_relative_item_url_is_skipped() -> None:
+    assert (
+        build_item_content(
+            entry={
+                "link": "/writing/post.html",
+                "title": "Relative item",
+            },
+            feed_meta=FEED_META,
+            published=PUBLISHED,
+            source_url=None,
+        )
+        is None
+    )
+
+
 def test_unresolvable_relative_home_page_url_is_omitted() -> None:
     item = build_item_content(
         entry={
