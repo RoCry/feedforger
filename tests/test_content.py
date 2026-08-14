@@ -315,3 +315,37 @@ def test_fulfillment_judgment_uses_content_size() -> None:
 def test_build_item_content_skips_entries_without_title_or_link() -> None:
     assert build({"title": "Missing link"}) is None
     assert build({"link": "https://source.example/items/missing-title"}) is None
+
+
+def test_relative_source_home_page_url_is_resolved_against_feed_url() -> None:
+    item = build_item_content(
+        entry={
+            "id": "urn:item:relative-home",
+            "link": "https://dirkjan.ochtman.nl/writing/post",
+            "title": "Relative home page",
+        },
+        feed_meta={"title": "Dirkjan's writing", "link": "/writing/"},
+        published=PUBLISHED,
+        source_url="https://dirkjan.ochtman.nl/writing/feeds/all.atom.xml",
+    )
+
+    assert item is not None
+    assert item.source is not None
+    assert str(item.source.home_page_url) == "https://dirkjan.ochtman.nl/writing/"
+
+
+def test_unresolvable_relative_home_page_url_is_omitted() -> None:
+    item = build_item_content(
+        entry={
+            "id": "urn:item:unresolvable-home",
+            "link": "https://source.example/items/unresolvable",
+            "title": "Unresolvable home page",
+        },
+        feed_meta={"title": "No base", "link": "/writing/"},
+        published=PUBLISHED,
+        source_url=None,
+    )
+
+    assert item is not None
+    assert item.source is not None
+    assert item.source.home_page_url is None

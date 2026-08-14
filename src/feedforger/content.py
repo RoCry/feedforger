@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Comment
 from dateutil import parser as date_parser
@@ -166,6 +167,15 @@ def _extract_tags(entry: Mapping[str, Any]) -> list[str]:
     return []
 
 
+def _absolute_url(value: object, base: str | None) -> str | None:
+    if not isinstance(value, str) or not (value := value.strip()):
+        return None
+    resolved = urljoin(base, value) if base else value
+    if resolved.startswith(("http://", "https://")):
+        return resolved
+    return None
+
+
 def _extract_source(
     feed_meta: Mapping[str, Any],
     source_url: str | None,
@@ -174,7 +184,7 @@ def _extract_source(
         return None
     title_value = feed_meta.get("title")
     title = title_value.strip() if isinstance(title_value, str) else None
-    home_page_url = feed_meta.get("link") or None
+    home_page_url = _absolute_url(feed_meta.get("link"), source_url)
     if not title and not home_page_url and not source_url:
         return None
     return Source.model_validate(
