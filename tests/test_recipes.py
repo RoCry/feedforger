@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-
 from feedforger.recipes import load_recipes
 
 

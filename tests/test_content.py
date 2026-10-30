@@ -1,9 +1,8 @@
 from datetime import UTC, datetime
 from typing import Any
 
-import pytest
-
 import feedforger.content as content_module
+import pytest
 from feedforger.content import build_item_content, needs_fulfillment
 from feedforger.models import FeedItem
 
@@ -39,8 +38,7 @@ def test_build_item_content_extracts_embedded_content() -> None:
                 {
                     "type": "text/html",
                     "value": (
-                        "<article><p>Hello <strong>world</strong>.</p>"
-                        "<!-- remove --><script>bad()</script></article>"
+                        "<article><p>Hello <strong>world</strong>.</p><!-- remove --><script>bad()</script></article>"
                     ),
                 }
             ],
@@ -103,8 +101,7 @@ def test_fetched_page_overrides_content_and_upgrades_short_title() -> None:
     assert item is not None
     assert item.title == "A much longer page title"
     assert item.content_html == (
-        '<article>\n<img src="https://source.example/page.jpg"/>\n'
-        "<p>Full <strong>article</strong>.</p>\n</article>"
+        '<article>\n<img src="https://source.example/page.jpg"/>\n<p>Full <strong>article</strong>.</p>\n</article>'
     )
     assert item.content_text == "Full article ."
     assert item.summary == "Brief."
@@ -254,9 +251,7 @@ def test_image_fallback_chain(entry_fields: dict[str, Any], expected: str) -> No
             "content": [
                 {
                     "type": "text/html",
-                    "value": (
-                        '<p><img src="https://source.example/inline.jpg">Body.</p>'
-                    ),
+                    "value": ('<p><img src="https://source.example/inline.jpg">Body.</p>'),
                 }
             ],
             **entry_fields,
@@ -347,10 +342,7 @@ def test_relative_item_url_is_resolved_against_feed_url() -> None:
     )
 
     assert item is not None
-    assert (
-        str(item.url)
-        == "https://dirkjan.ochtman.nl/writing/2026/08/13/announcing-oxish.html"
-    )
+    assert str(item.url) == "https://dirkjan.ochtman.nl/writing/2026/08/13/announcing-oxish.html"
     assert item.source is not None
     assert str(item.source.home_page_url) == "https://dirkjan.ochtman.nl/writing/"
 

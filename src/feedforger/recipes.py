@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 from xml.etree.ElementTree import parse as parse_xml
+
+import tomllib
 
 from feedforger.log import logger
 from feedforger.models import FeedConfig, RecipeCollection
@@ -16,9 +17,7 @@ def load_toml(path: Path) -> dict[str, FeedConfig]:
     return collection.recipes
 
 
-def _collect_opml_feeds(
-    outline, feeds: dict[str, list[str]], current_group: str
-) -> None:
+def _collect_opml_feeds(outline, feeds: dict[str, list[str]], current_group: str) -> None:
     """Recursively collect feed URLs from OPML outline elements."""
     xml_url = outline.get("xmlUrl")
     if xml_url:

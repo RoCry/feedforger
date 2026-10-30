@@ -106,11 +106,7 @@ def _extract_embedded_content(entry: Mapping[str, Any]) -> _EmbeddedContent:
 
     raw_summary = entry.get("summary")
     summary: str | None = None
-    if (
-        isinstance(raw_summary, str)
-        and raw_summary
-        and not raw_summary.lstrip().startswith("<")
-    ):
+    if isinstance(raw_summary, str) and raw_summary and not raw_summary.lstrip().startswith("<"):
         summary = raw_summary.strip()
     elif content_html:
         summary = _html_to_summary(content_html)
@@ -145,9 +141,7 @@ def _extract_author(
         return Author.model_validate(
             {
                 "name": name,
-                "url": _absolute_url(
-                    author_data.get("uri") or author_data.get("href"), source_url
-                ),
+                "url": _absolute_url(author_data.get("uri") or author_data.get("href"), source_url),
                 "avatar": _absolute_url(author_data.get("avatar"), source_url),
             }
         )
@@ -161,9 +155,7 @@ def _extract_tags(entry: Mapping[str, Any]) -> list[str]:
         return [
             term
             for tag in tags
-            if isinstance(tag, Mapping)
-            and isinstance(term := tag.get("term"), str)
-            and (term := term.strip())
+            if isinstance(tag, Mapping) and isinstance(term := tag.get("term"), str) and (term := term.strip())
         ]
     if isinstance(categories := entry.get("categories"), list):
         return [category for category in categories if isinstance(category, str)]
@@ -204,20 +196,14 @@ def _extract_image(
     content_html: str | None,
 ) -> str | None:
     for media in entry.get("media_content", []) or []:
-        if (
-            isinstance(media, Mapping)
-            and media.get("medium") == "image"
-            and isinstance(media.get("url"), str)
-        ):
+        if isinstance(media, Mapping) and media.get("medium") == "image" and isinstance(media.get("url"), str):
             return media["url"]
 
     for thumbnail in entry.get("media_thumbnail", []) or []:
         if isinstance(thumbnail, Mapping) and isinstance(thumbnail.get("url"), str):
             return thumbnail["url"]
 
-    if isinstance(image := entry.get("image"), Mapping) and isinstance(
-        image.get("href"), str
-    ):
+    if isinstance(image := entry.get("image"), Mapping) and isinstance(image.get("href"), str):
         return image["href"]
 
     for enclosure in entry.get("enclosures", []) or []:
@@ -225,11 +211,7 @@ def _extract_image(
             continue
         media_type = enclosure.get("type")
         url = enclosure.get("href") or enclosure.get("url")
-        if (
-            isinstance(media_type, str)
-            and media_type.lower().startswith("image/")
-            and isinstance(url, str)
-        ):
+        if isinstance(media_type, str) and media_type.lower().startswith("image/") and isinstance(url, str):
             return url
 
     return _first_image_in_html(content_html) if content_html else None
@@ -238,18 +220,10 @@ def _extract_image(
 def _extract_page_content(html: str, url: str) -> _PageContent:
     try:
         soup = BeautifulSoup(html, "html.parser")
-        title = (
-            title_tag.get_text(strip=True)
-            if (title_tag := soup.find("title"))
-            else None
-        )
+        title = title_tag.get_text(strip=True) if (title_tag := soup.find("title")) else None
 
         content = next(
-            (
-                selected
-                for selector in _CONTENT_SELECTORS
-                if (selected := soup.select_one(selector))
-            ),
+            (selected for selector in _CONTENT_SELECTORS if (selected := soup.select_one(selector))),
             None,
         )
         if content is None and (divs := soup.find_all("div")):
@@ -258,9 +232,7 @@ def _extract_page_content(html: str, url: str) -> _PageContent:
             return _PageContent(title=title)
 
         content_html = _sanitize_html(str(content))
-        content_text = BeautifulSoup(content_html, "html.parser").get_text(
-            separator=" ", strip=True
-        )
+        content_text = BeautifulSoup(content_html, "html.parser").get_text(separator=" ", strip=True)
         if not content_text:
             return _PageContent(title=title)
         return _PageContent(
@@ -323,14 +295,8 @@ def build_item_content(
 def needs_fulfillment(item: FeedItem) -> bool:
     """Return whether an item lacks substantial embedded or fetched content."""
     return not (
-        (
-            item.content_html is not None
-            and len(item.content_html) > SUBSTANTIAL_HTML_LENGTH
-        )
-        or (
-            item.content_text is not None
-            and len(item.content_text) > SUBSTANTIAL_TEXT_LENGTH
-        )
+        (item.content_html is not None and len(item.content_html) > SUBSTANTIAL_HTML_LENGTH)
+        or (item.content_text is not None and len(item.content_text) > SUBSTANTIAL_TEXT_LENGTH)
     )
 
 

@@ -18,9 +18,7 @@ class Settings:
     DEFAULT_ARTICLE_TTL: ClassVar[timedelta] = timedelta(days=30)
     DEFAULT_CLEANUP_RETENTION: ClassVar[timedelta] = timedelta(days=7)
     DEFAULT_REPOSITORY: ClassVar[str] = "RoCry/feedforger"
-    DEFAULT_BASE_URL: ClassVar[str] = (
-        f"https://github.com/{DEFAULT_REPOSITORY}/releases"
-    )
+    DEFAULT_BASE_URL: ClassVar[str] = f"https://github.com/{DEFAULT_REPOSITORY}/releases"
     DEFAULT_MAX_CONCURRENT: ClassVar[int] = 5
     DEFAULT_REQUEST_TIMEOUT: ClassVar[float] = 15.0
     DEFAULT_REQUEST_RETRIES: ClassVar[int] = 2
@@ -76,48 +74,22 @@ class Settings:
         request_timeout: float | None = None,
         request_retries: int | None = None,
     ) -> Settings:
-        resolved_base_url = (
-            base_url if base_url is not None else env.get("FEEDFORGER_BASE_URL")
-        )
+        resolved_base_url = base_url if base_url is not None else env.get("FEEDFORGER_BASE_URL")
         if resolved_base_url is None:
             repository = env.get("GITHUB_REPOSITORY", cls.DEFAULT_REPOSITORY)
             resolved_base_url = f"https://github.com/{repository}/releases"
 
         return cls(
-            recipes_path=(
-                recipes_path if recipes_path is not None else cls.DEFAULT_RECIPES_PATH
-            ),
-            output_dir=(
-                output_dir if output_dir is not None else cls.DEFAULT_OUTPUT_DIR
-            ),
-            report_path=(
-                report_path if report_path is not None else cls.DEFAULT_REPORT_PATH
-            ),
+            recipes_path=(recipes_path if recipes_path is not None else cls.DEFAULT_RECIPES_PATH),
+            output_dir=(output_dir if output_dir is not None else cls.DEFAULT_OUTPUT_DIR),
+            report_path=(report_path if report_path is not None else cls.DEFAULT_REPORT_PATH),
             db_path=db_path if db_path is not None else cls.DEFAULT_DB_PATH,
             since=since if since is not None else cls.DEFAULT_SINCE,
             feed_ttl=feed_ttl if feed_ttl is not None else cls.DEFAULT_FEED_TTL,
-            article_ttl=(
-                article_ttl if article_ttl is not None else cls.DEFAULT_ARTICLE_TTL
-            ),
-            cleanup_retention=(
-                cleanup_retention
-                if cleanup_retention is not None
-                else cls.DEFAULT_CLEANUP_RETENTION
-            ),
+            article_ttl=(article_ttl if article_ttl is not None else cls.DEFAULT_ARTICLE_TTL),
+            cleanup_retention=(cleanup_retention if cleanup_retention is not None else cls.DEFAULT_CLEANUP_RETENTION),
             base_url=resolved_base_url,
-            max_concurrent=(
-                max_concurrent
-                if max_concurrent is not None
-                else cls.DEFAULT_MAX_CONCURRENT
-            ),
-            request_timeout=(
-                request_timeout
-                if request_timeout is not None
-                else cls.DEFAULT_REQUEST_TIMEOUT
-            ),
-            request_retries=(
-                request_retries
-                if request_retries is not None
-                else cls.DEFAULT_REQUEST_RETRIES
-            ),
+            max_concurrent=(max_concurrent if max_concurrent is not None else cls.DEFAULT_MAX_CONCURRENT),
+            request_timeout=(request_timeout if request_timeout is not None else cls.DEFAULT_REQUEST_TIMEOUT),
+            request_retries=(request_retries if request_retries is not None else cls.DEFAULT_REQUEST_RETRIES),
         )

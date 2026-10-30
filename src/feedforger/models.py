@@ -89,9 +89,7 @@ class Feed(BaseModel):
         return cls.model_validate(
             {
                 "title": feed_name,
-                "items": sorted(
-                    items, key=lambda item: item.date_published, reverse=True
-                ),
+                "items": sorted(items, key=lambda item: item.date_published, reverse=True),
                 "description": f"Aggregated feed for {feed_name}",
                 "home_page_url": home_url,
                 "feed_url": feed_url,

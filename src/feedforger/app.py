@@ -100,9 +100,7 @@ async def _fulfill_items_content(
         return
 
     logger.info(f"{feed_name}: {len(pending)}/{len(items)} items need Content")
-    pages = await asyncio.gather(
-        *(store.get(str(built.item.url), ttl=settings.article_ttl) for built in pending)
-    )
+    pages = await asyncio.gather(*(store.get(str(built.item.url), ttl=settings.article_ttl) for built in pending))
     for built, page_html in zip(pending, pages, strict=True):
         if page_html and (rebuilt := _build_item(built.source, page_html=page_html)):
             built.item = rebuilt
@@ -117,9 +115,7 @@ async def process_feeds(
     ignore_before = datetime.now(UTC) - settings.since
     logger.info(f"{feed_name}: processing {len(feed_config.urls)} feeds")
 
-    contents = await asyncio.gather(
-        *(store.get(url, ttl=settings.feed_ttl) for url in feed_config.urls)
-    )
+    contents = await asyncio.gather(*(store.get(url, ttl=settings.feed_ttl) for url in feed_config.urls))
     built_items: list[_BuiltItem] = []
     for processed, (url, content) in enumerate(
         zip(feed_config.urls, contents, strict=True),
@@ -136,10 +132,7 @@ async def process_feeds(
                 source_url=url,
             )
             built_items.extend(feed_items)
-            logger.info(
-                f"{feed_name}: processed {len(feed_items)} entries from {url} "
-                f"({processed}/{len(contents)})"
-            )
+            logger.info(f"{feed_name}: processed {len(feed_items)} entries from {url} ({processed}/{len(contents)})")
         except Exception as error:
             raise RuntimeError(f"{feed_name}: failed to process {url}") from error
 
@@ -168,9 +161,7 @@ async def run_build(
         if skipped:
             logger.info(f"{feed_name}: skipping {skipped} persistently failing URLs")
         if not active_urls:
-            logger.warning(
-                f"{feed_name}: all URLs are persistently failing; preserving prior output"
-            )
+            logger.warning(f"{feed_name}: all URLs are persistently failing; preserving prior output")
             continue
 
         active_config = feed_config.model_copy(update={"urls": active_urls})
@@ -181,7 +172,5 @@ async def run_build(
             base_url=settings.base_url,
         )
         output_path = settings.output_dir / f"{feed_name}.json"
-        output_path.write_text(
-            feed.model_dump_json(indent=2, exclude_none=True, by_alias=True)
-        )
+        output_path.write_text(feed.model_dump_json(indent=2, exclude_none=True, by_alias=True))
         logger.info(f"{feed_name}: generated {output_path}, {len(items)} items")

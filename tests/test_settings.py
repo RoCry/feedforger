@@ -2,7 +2,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-
 from feedforger.models import Feed, FeedItem
 from feedforger.settings import Settings
 
@@ -29,18 +28,12 @@ def test_settings_resolves_explicit_and_environment_base_urls() -> None:
         },
         base_url="https://flag.example/releases",
     )
-    from_environment = Settings.from_sources(
-        env={"FEEDFORGER_BASE_URL": "https://env.example/releases"}
-    )
-    from_repository = Settings.from_sources(
-        env={"GITHUB_REPOSITORY": "example/repository"}
-    )
+    from_environment = Settings.from_sources(env={"FEEDFORGER_BASE_URL": "https://env.example/releases"})
+    from_repository = Settings.from_sources(env={"GITHUB_REPOSITORY": "example/repository"})
 
     assert explicit.base_url == "https://flag.example/releases"
     assert from_environment.base_url == "https://env.example/releases"
-    assert from_repository.base_url == (
-        "https://github.com/example/repository/releases"
-    )
+    assert from_repository.base_url == ("https://github.com/example/repository/releases")
 
 
 def test_settings_rejects_invalid_explicit_values() -> None:

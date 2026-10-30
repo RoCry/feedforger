@@ -59,12 +59,8 @@ EXPECTED_OUTPUT = """{
 def test_build_fixture_output_is_byte_identical(tmp_path: Path) -> None:
     feed_url = "https://fixture.example/feed.xml"
     recipes_path = tmp_path / "recipes.toml"
-    recipes_path.write_text(
-        '[recipes.Fixture]\nurls = ["https://fixture.example/feed.xml"]\n'
-    )
-    store = InMemoryContentStore(
-        responses={feed_url: [(FIXTURES_DIR / "characterization_feed.xml").read_text()]}
-    )
+    recipes_path.write_text('[recipes.Fixture]\nurls = ["https://fixture.example/feed.xml"]\n')
+    store = InMemoryContentStore(responses={feed_url: [(FIXTURES_DIR / "characterization_feed.xml").read_text()]})
     settings = Settings(
         recipes_path=recipes_path,
         output_dir=tmp_path / "outputs",
@@ -86,9 +82,7 @@ def test_build_preserves_previous_output_when_all_sources_persistently_fail(
     feed_url = "https://fixture.example/broken.xml"
     store = InMemoryContentStore(responses={feed_url: [None] * 30})
     recipes_path = tmp_path / "recipes.toml"
-    recipes_path.write_text(
-        '[recipes.Blocked]\nurls = ["https://fixture.example/broken.xml"]\n'
-    )
+    recipes_path.write_text('[recipes.Blocked]\nurls = ["https://fixture.example/broken.xml"]\n')
     settings = Settings(
         recipes_path=recipes_path,
         output_dir=tmp_path / "outputs",

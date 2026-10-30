@@ -89,21 +89,12 @@ class _FetchThroughCache:
             raise ValueError("ContentStore TTL must be positive")
 
         record = await self._records.get(url)
-        if (
-            record is not None
-            and record.continue_fail_count >= MAX_CONSECUTIVE_FAILURES
-        ):
-            logger.debug(
-                f"Skipping {url}: {record.continue_fail_count} consecutive failures"
-            )
+        if record is not None and record.continue_fail_count >= MAX_CONSECUTIVE_FAILURES:
+            logger.debug(f"Skipping {url}: {record.continue_fail_count} consecutive failures")
             return None
 
         cutoff = int((self._now() - ttl).timestamp())
-        if (
-            record is not None
-            and record.content is not None
-            and record.updated_at > cutoff
-        ):
+        if record is not None and record.content is not None and record.updated_at > cutoff:
             return record.content
 
         content, error_reason = await self._origin.fetch(url)
@@ -192,9 +183,7 @@ class _MemoryRecords:
         )
 
     async def cleanup(self, *, cutoff: int) -> int:
-        expired = [
-            url for url, record in self._records.items() if record.updated_at < cutoff
-        ]
+        expired = [url for url, record in self._records.items() if record.updated_at < cutoff]
         for url in expired:
             del self._records[url]
         return len(expired)
@@ -223,9 +212,7 @@ class _MemoryRecords:
 
 class _ScriptedOrigin:
     def __init__(self, responses: Mapping[str, Sequence[str | None]]) -> None:
-        self._responses = {
-            url: deque(url_responses) for url, url_responses in responses.items()
-        }
+        self._responses = {url: deque(url_responses) for url, url_responses in responses.items()}
 
     async def fetch(self, url: str) -> tuple[str | None, str | None]:
         if not (responses := self._responses.get(url)):
@@ -280,9 +267,7 @@ class _SQLiteRecords:
                 error_reason TEXT
             )
         """)
-        await self._db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_feeds_updated_at ON feeds(updated_at)"
-        )
+        await self._db.execute("CREATE INDEX IF NOT EXISTS idx_feeds_updated_at ON feeds(updated_at)")
         await self._db.commit()
 
     async def close(self) -> None:
@@ -428,11 +413,7 @@ class _HttpOrigin:
                 try:
                     response = await self._client.get(url)
                     response.raise_for_status()
-                    return (
-                        (response.text, None)
-                        if response.text
-                        else (None, "empty response")
-                    )
+                    return (response.text, None) if response.text else (None, "empty response")
                 except httpx.TimeoutException as error:
                     last_error = f"Timeout: {error}"
                 except httpx.HTTPStatusError as error:

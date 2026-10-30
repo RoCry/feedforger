@@ -3,10 +3,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import feedforger.app as app_module
 import httpx
 import pytest
-
-import feedforger.app as app_module
 from feedforger.app import process_feeds
 from feedforger.content_store import (
     InMemoryContentStore,
@@ -38,20 +37,11 @@ def test_memory_store_refreshes_content_at_exact_ttl_boundary() -> None:
     )
 
     async def scenario() -> None:
-        assert (
-            await store.get("https://example.com/feed", ttl=settings.feed_ttl)
-            == "first"
-        )
+        assert await store.get("https://example.com/feed", ttl=settings.feed_ttl) == "first"
         clock.advance(timedelta(minutes=29, seconds=59))
-        assert (
-            await store.get("https://example.com/feed", ttl=settings.feed_ttl)
-            == "first"
-        )
+        assert await store.get("https://example.com/feed", ttl=settings.feed_ttl) == "first"
         clock.advance(timedelta(seconds=1))
-        assert (
-            await store.get("https://example.com/feed", ttl=settings.feed_ttl)
-            == "second"
-        )
+        assert await store.get("https://example.com/feed", ttl=settings.feed_ttl) == "second"
 
     asyncio.run(scenario())
 

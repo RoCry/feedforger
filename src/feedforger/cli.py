@@ -94,13 +94,8 @@ def report(
             payload = await store.failure_report()
 
         settings.report_path.parent.mkdir(parents=True, exist_ok=True)
-        settings.report_path.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False)
-        )
-        typer.echo(
-            f"Wrote {len(payload['entries'])} entries "
-            f"({payload['failing']} failing) → {settings.report_path}"
-        )
+        settings.report_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+        typer.echo(f"Wrote {len(payload['entries'])} entries ({payload['failing']} failing) → {settings.report_path}")
 
     asyncio.run(_run())
 
