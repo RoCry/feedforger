@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 from xml.etree.ElementTree import parse as parse_xml
-
-import tomllib
 
 from feedforger.log import logger
 from feedforger.models import FeedConfig, RecipeCollection

@@ -175,7 +175,7 @@ def test_page_parser_failure_propagates(monkeypatch: pytest.MonkeyPatch) -> None
 
     with pytest.raises(
         RuntimeError,
-        match="Failed to extract Content from https://source.example/items/parser-failure",
+        match=r"Failed to extract Content from https://source\.example/items/parser-failure",
     ):
         build(
             {
